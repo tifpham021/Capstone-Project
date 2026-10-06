@@ -22,6 +22,7 @@ import shieldPlate from './assets/figma/cbe13.svg'
 import shieldIcon from './assets/figma/d88f6.svg'
 import shieldCheck from './assets/figma/70c7b.svg'
 import pageBackground from './assets/figma/24aa6.svg'
+import ItemInspection from './ItemInspection.jsx'
 import './App.css'
 
 const workflowSteps = [
@@ -35,6 +36,7 @@ function LayeredIcon({ className = '', children }) {
 }
 
 function App() {
+  const [screen, setScreen] = useState('inspection')
   const [mode, setMode] = useState('barcode')
   const [lookup, setLookup] = useState('')
   const [status, setStatus] = useState('')
@@ -62,7 +64,7 @@ function App() {
     <div className="app-shell" style={{ backgroundImage: `url(${pageBackground})` }}>
       <header className="topbar">
         <div className="topbar-inner">
-          <a className="brand" href="#main" aria-label="ReturnScan home">
+          <a className="brand" href="#main" aria-label="ReturnScan home" onClick={() => setScreen('identify')}>
             <LayeredIcon className="brand-icon">
               <img src={logoPlate} alt="" />
               <img src={logoMark} alt="" />
@@ -71,7 +73,7 @@ function App() {
           </a>
 
           <nav className="primary-nav" aria-label="Primary navigation">
-            <button className="nav-link active" type="button">New Return</button>
+            <button className="nav-link active" type="button" onClick={() => setScreen('identify')}>New Return</button>
             <button className="nav-link" type="button">Return History</button>
             <button className="nav-link queue-link" type="button">
               Review Queue
@@ -99,10 +101,21 @@ function App() {
         </div>
       </header>
 
+      {screen === 'identify' ? (
       <main id="main" className="page-content">
         <ol className="workflow" aria-label="Return workflow">
           {workflowSteps.map(([number, title, description], index) => (
-            <li className={index === 0 ? 'workflow-step active' : 'workflow-step'} key={number}>
+            <li
+              className={`${index === 0 ? 'workflow-step active' : 'workflow-step'}${index === 1 ? ' clickable' : ''}`}
+              key={number}
+              role={index === 1 ? 'button' : undefined}
+              tabIndex={index === 1 ? 0 : undefined}
+              aria-label={index === 1 ? 'Open item inspection' : undefined}
+              onClick={index === 1 ? () => setScreen('inspection') : undefined}
+              onKeyDown={index === 1 ? (event) => {
+                if (event.key === 'Enter' || event.key === ' ') setScreen('inspection')
+              } : undefined}
+            >
               <span className="step-number">{number}</span>
               <span className="step-copy">
                 <strong>{title}</strong>
@@ -261,6 +274,9 @@ function App() {
           </aside>
         </div>
       </main>
+      ) : (
+        <ItemInspection onBack={() => setScreen('identify')} />
+      )}
     </div>
   )
 }

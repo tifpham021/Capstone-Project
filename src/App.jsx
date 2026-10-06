@@ -23,6 +23,7 @@ import shieldIcon from './assets/figma/d88f6.svg'
 import shieldCheck from './assets/figma/70c7b.svg'
 import pageBackground from './assets/figma/24aa6.svg'
 import ItemInspection from './ItemInspection.jsx'
+import ReviewDecision from './ReviewDecision.jsx'
 import './App.css'
 
 const workflowSteps = [
@@ -127,13 +128,13 @@ function App() {
 
         <section className="intro" aria-labelledby="page-title">
           <div>
-            <span className="eyebrow">New return</span>
             <h1 id="page-title">Identify the returned item</h1>
             <p>Scan the product barcode or use an order identifier to start a verified return.</p>
           </div>
           <div className="case-status">
             <span>Return case</span>
-            <strong>Created after identification</strong>
+            <strong>Not created yet</strong>
+            <small>Created after identification</small>
           </div>
         </section>
 
@@ -269,13 +270,20 @@ function App() {
                 </div>
               </div>
               <p>Images, identifiers, and weight readings are preserved for the reviewer. Automated signals never make the final decision.</p>
-              <span className="evidence-accent" />
             </section>
           </aside>
         </div>
       </main>
+      ) : screen === 'inspection' ? (
+        <ItemInspection
+          onBack={() => setScreen('identify')}
+          onContinue={() => setScreen('review')}
+        />
       ) : (
-        <ItemInspection onBack={() => setScreen('identify')} />
+        <ReviewDecision
+          onIdentify={() => setScreen('identify')}
+          onBack={() => setScreen('inspection')}
+        />
       )}
     </div>
   )

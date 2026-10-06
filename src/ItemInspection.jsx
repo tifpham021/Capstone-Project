@@ -43,7 +43,7 @@ function StackedAsset({ className = '', children }) {
   return <span className={`inspection-asset ${className}`}>{children}</span>
 }
 
-function InspectionWorkflow({ onBack }) {
+function InspectionWorkflow({ onBack, onContinue }) {
   return (
     <ol className="inspection-workflow" aria-label="Return workflow">
       <li className="inspection-step complete">
@@ -65,13 +65,13 @@ function InspectionWorkflow({ onBack }) {
         </span>
       </li>
       <li className="inspection-step upcoming">
-        <span className="inspection-step-content">
+        <button type="button" onClick={onContinue} aria-label="Open final review">
           <StackedAsset className="inspection-step-icon">
             <img src={pendingCircle} alt="" />
             <b>3</b>
           </StackedAsset>
           <span><strong>Review decision</strong><small>Approve, escalate, or flag</small></span>
-        </span>
+        </button>
       </li>
     </ol>
   )
@@ -104,7 +104,7 @@ function StatusIcon({ state }) {
   )
 }
 
-function ItemInspection({ onBack }) {
+function ItemInspection({ onBack, onContinue }) {
   const [note, setNote] = useState('')
   const [photoCount, setPhotoCount] = useState(2)
   const [weight, setWeight] = useState('1.61')
@@ -124,11 +124,10 @@ function ItemInspection({ onBack }) {
   return (
     <>
       <main id="main" className="inspection-page">
-        <InspectionWorkflow onBack={onBack} />
+        <InspectionWorkflow onBack={onBack} onContinue={onContinue} />
 
         <section className="inspection-intro" aria-labelledby="inspection-title">
           <div>
-            <span className="inspection-eyebrow">Step 2 of 3</span>
             <h1 id="inspection-title">Inspect the returned item</h1>
             <p>Compare the live return against the verified shipment before making a decision.</p>
           </div>
@@ -247,7 +246,7 @@ function ItemInspection({ onBack }) {
         </div>
         <div className="inspection-actions">
           <button type="button" className="save-button" onClick={() => setFeedback('Inspection saved for later.')}>Save for later</button>
-          <button type="button" className="continue-button" onClick={() => setFeedback('Inspection complete. The review screen is ready for the next step.')}>
+          <button type="button" className="continue-button" onClick={onContinue}>
             Continue to review
             <img src={continueArrow} alt="" />
           </button>

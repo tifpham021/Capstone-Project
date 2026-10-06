@@ -13,16 +13,17 @@
   margin: 0;
   padding: 16px 18px;
   border-radius: 16px;
-  background: #fff;
+  background: transparent;
   list-style: none;
 }
 
 .inspection-step {
   position: relative;
   min-width: 0;
-  border: 1px solid #e2e8f0;
+  border: 1px solid #d7dee9;
   border-radius: 10px;
-  background: #f8fafc;
+  background: #fff;
+  box-shadow: 0 4px 12px rgb(15 23 42 / 6%);
 }
 
 .inspection-step:not(:last-child)::after {
@@ -31,7 +32,7 @@
   top: 24px;
   left: calc(100% + 15px);
   width: 28px;
-  border-top: 2px dashed #cbd5e1;
+  border-top: 2px dashed #b8c2d1;
 }
 
 .inspection-step button,
@@ -100,7 +101,7 @@
 .inspection-step small {
   overflow: hidden;
   color: #9ca3af;
-  font-size: 11px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -122,27 +123,18 @@
 }
 
 .inspection-intro {
-  height: 146px;
+  height: 134px;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.inspection-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  height: 28px;
-  padding: 0 20px;
-  border-radius: 999px;
-  color: #4f46e5;
-  background: #eef2ff;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
+.inspection-intro > div:first-child {
+  transform: translateY(-8px);
 }
 
 .inspection-intro h1 {
-  margin: 8px 0 5px;
+  margin: 0 0 6px;
   color: #111827;
   font-size: 36px;
   line-height: 1.2;
@@ -169,7 +161,7 @@
 
 .inspection-case > div span {
   color: #8a94a6;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -181,7 +173,7 @@
 
 .inspection-case > div small {
   color: #687386;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .needs-review {
@@ -193,7 +185,7 @@
   border-radius: 999px;
   color: #9a5a00;
   background: #fff7e8;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -251,7 +243,7 @@
 .comparison-heading > span,
 .automated-heading > span {
   color: #4169e1;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -291,7 +283,7 @@
   border-radius: 999px;
   color: #1f2937;
   background: #fff;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   box-shadow: 0 2px 8px rgb(15 23 42 / 8%);
@@ -318,7 +310,7 @@
   border-radius: 999px;
   color: #fff;
   background: #27324a;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -373,7 +365,7 @@
 .attention-panel p {
   margin: 7px 0 0;
   color: #6b7280;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .attention-panel button {
@@ -387,7 +379,7 @@
   border-radius: 9px;
   color: #3158c4;
   background: #fff;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -402,7 +394,7 @@
   display: grid;
   margin-top: 18px;
   color: #344054;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
 }
 
@@ -416,7 +408,7 @@
   outline: 0;
   color: #334155;
   background: #fff;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 400;
 }
 
@@ -432,7 +424,7 @@
 .inspection-note small {
   margin: -25px 18px 0;
   color: #98a2b3;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
   pointer-events: none;
 }
@@ -462,7 +454,7 @@
   border-radius: 999px;
   color: #16794a;
   background: #ecfdf3;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -500,7 +492,7 @@
   display: block;
   margin-top: 0;
   color: #8a94a6;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .expected-weight {
@@ -513,7 +505,7 @@
 
 .expected-weight > span {
   color: #8a94a6;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -546,13 +538,13 @@
 }
 
 .tolerance-bar > strong {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .tolerance-bar button {
   color: #3158c4;
   background: transparent;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -605,13 +597,13 @@
 
 .check-row strong {
   color: #344054;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .check-row small {
   overflow: hidden;
   color: #8a94a6;
-  font-size: 11px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -623,7 +615,7 @@
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -675,13 +667,13 @@
 
 .preserved-card h2 {
   color: #fff;
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .preserved-card p {
   margin: 6px 0 0;
   color: #b9c6e3;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .autosaved-pill {
@@ -692,7 +684,7 @@
   border-radius: 999px;
   color: #d9e5ff;
   background: #273b68;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   margin-top: 10px;
@@ -715,12 +707,12 @@
 
 .inspection-footer strong {
   color: #344054;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .inspection-footer span {
   color: #7b8495;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .inspection-actions {
@@ -732,7 +724,7 @@
 .inspection-actions button {
   height: 49px;
   border-radius: 10px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -835,6 +827,10 @@
     display: grid;
     gap: 22px;
     padding: 24px 0;
+  }
+
+  .inspection-intro > div:first-child {
+    transform: none;
   }
 
   .inspection-intro h1 {

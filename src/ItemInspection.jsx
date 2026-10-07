@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import shippedReference from './assets/figma/inspection/4036d.png'
 import returnedItem from './assets/figma/inspection/97c93.png'
 import completeCircle from './assets/figma/inspection/b6992.svg'
@@ -104,15 +104,134 @@ function StatusIcon({ state }) {
   )
 }
 
+function stopStream(stream) {
+  stream?.getTracks().forEach((track) => track.stop())
+}
+
 function ItemInspection({ onBack, onContinue }) {
   const [note, setNote] = useState('')
   const [photoCount, setPhotoCount] = useState(2)
   const [weight, setWeight] = useState('1.61')
   const [feedback, setFeedback] = useState('')
+  const [photoMode, setPhotoMode] = useState(null)
+  const [cameraError, setCameraError] = useState('')
+  const [returnedPreview, setReturnedPreview] = useState(returnedItem)
+  const [addedPhotos, setAddedPhotos] = useState([])
+  const fileInputRef = useRef(null)
+  const videoRef = useRef(null)
+  const streamRef = useRef(null)
+  const addedPhotosRef = useRef([])
 
-  const addPhoto = () => {
+  useEffect(() => {
+    addedPhotosRef.current = addedPhotos
+  }, [addedPhotos])
+
+  useEffect(() => {
+    return () => {
+      stopStream(streamRef.current)
+      addedPhotosRef.current.forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!photoMode) return undefined
+
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') closePhotoTools()
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [photoMode])
+
+  useEffect(() => {
+    if (photoMode !== 'camera') return undefined
+
+    let cancelled = false
+    setCameraError('')
+
+    const startCamera = async () => {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setCameraError('Camera is not supported in this browser. Upload a file instead.')
+        return
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false,
+        })
+
+        if (cancelled) {
+          stopStream(stream)
+          return
+        }
+
+        streamRef.current = stream
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          await videoRef.current.play()
+        }
+      } catch {
+        if (!cancelled) {
+          setCameraError('Camera access was denied or is unavailable. You can still upload a file.')
+        }
+      }
+    }
+
+    startCamera()
+
+    return () => {
+      cancelled = true
+      stopStream(streamRef.current)
+      streamRef.current = null
+      if (videoRef.current) videoRef.current.srcObject = null
+    }
+  }, [photoMode])
+
+  const closePhotoTools = () => {
+    setPhotoMode(null)
+    setCameraError('')
+  }
+
+  const attachPhoto = (file) => {
+    if (!file || !file.type.startsWith('image/')) {
+      setFeedback('Choose an image file to add to the evidence package.')
+      return
+    }
+
+    const url = URL.createObjectURL(file)
+    setAddedPhotos((photos) => [...photos, url])
+    setReturnedPreview(url)
     setPhotoCount((count) => Math.min(count + 1, 4))
-    setFeedback('Photo slot added to the evidence package.')
+    setFeedback(`${file.name || 'Photo'} added to the evidence package.`)
+    closePhotoTools()
+  }
+
+  const onFileSelected = (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    attachPhoto(file)
+  }
+
+  const capturePhoto = () => {
+    const video = videoRef.current
+    if (!video || !video.videoWidth) {
+      setFeedback('Wait for the camera preview, then capture.')
+      return
+    }
+
+    const canvas = document.createElement('canvas')
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    canvas.getContext('2d').drawImage(video, 0, 0)
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        setFeedback('Could not capture that frame. Try again or upload a file.')
+        return
+      }
+      attachPhoto(new File([blob], `serial-plate-${Date.now()}.jpg`, { type: 'image/jpeg' }))
+    }, 'image/jpeg', 0.92)
   }
 
   const toggleTare = () => {
@@ -155,9 +274,9 @@ function ItemInspection({ onBack, onContinue }) {
                 <span className="image-count">01 / 04</span>
               </figure>
               <figure>
-                <img src={returnedItem} alt="Live photo of the returned cordless drill" />
+                <img src={returnedPreview} alt="Live photo of the returned cordless drill" />
                 <figcaption className="image-label returned-label"><i />Returned item</figcaption>
-                <span className="image-count live-count">Live</span>
+                <span className="image-count live-count">{addedPhotos.length ? 'Added' : 'Live'}</span>
               </figure>
             </div>
 
@@ -170,7 +289,13 @@ function ItemInspection({ onBack, onContinue }) {
                 <strong>Photo angle needs attention</strong>
                 <p>Product shape appears consistent. Add a clear serial-plate photo to complete the check.</p>
               </div>
-              <button type="button" onClick={addPhoto}><span>＋</span>Add photo</button>
+              <button
+                className="add-photo-button"
+                type="button"
+                onClick={() => setPhotoMode('choose')}
+              >
+                <span>＋</span>Add photo
+              </button>
             </div>
 
             <label className="inspection-note">
@@ -252,6 +377,74 @@ function ItemInspection({ onBack, onContinue }) {
           </button>
         </div>
       </footer>
+
+      {photoMode ? (
+        <div
+          className="camera-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="camera-title"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) closePhotoTools()
+          }}
+        >
+          <div className="camera-sheet">
+            <div className="camera-sheet-header">
+              <div>
+                <h2 id="camera-title">
+                  {photoMode === 'camera' ? 'Capture serial-plate photo' : 'Add inspection photo'}
+                </h2>
+                <p>
+                  {photoMode === 'camera'
+                    ? 'Hold the camera steady so the markings are readable.'
+                    : 'Take a live photo or upload an image of the serial plate.'}
+                </p>
+              </div>
+              <button type="button" className="camera-close" onClick={closePhotoTools}>Close</button>
+            </div>
+            {photoMode === 'choose' ? (
+              <div className="photo-source-actions">
+                <button type="button" className="continue-button" onClick={() => setPhotoMode('camera')}>
+                  Take photo
+                </button>
+                <button type="button" className="save-button" onClick={() => fileInputRef.current?.click()}>
+                  Upload file
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="camera-preview">
+                  {cameraError ? (
+                    <p className="camera-error">{cameraError}</p>
+                  ) : (
+                    <video ref={videoRef} autoPlay playsInline muted />
+                  )}
+                </div>
+                <div className="camera-sheet-actions">
+                  <button type="button" className="save-button" onClick={() => fileInputRef.current?.click()}>
+                    Upload file instead
+                  </button>
+                  <button
+                    type="button"
+                    className="continue-button"
+                    onClick={capturePhoto}
+                    disabled={Boolean(cameraError)}
+                  >
+                    Capture photo
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
+      <input
+        ref={fileInputRef}
+        className="sr-only"
+        type="file"
+        accept="image/*"
+        onChange={onFileSelected}
+      />
     </>
   )
 }

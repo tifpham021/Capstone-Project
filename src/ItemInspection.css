@@ -368,7 +368,7 @@
   font-size: 13px;
 }
 
-.attention-panel button {
+.add-photo-button {
   min-width: 148px;
   height: 35px;
   display: inline-flex;
@@ -384,10 +384,139 @@
   cursor: pointer;
 }
 
-.attention-panel button span {
+.add-photo-button span {
   color: #4169e1;
   font-size: 19px;
   line-height: 1;
+}
+
+.photo-source-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.photo-source-actions .save-button,
+.photo-source-actions .continue-button {
+  width: 100%;
+  height: 48px;
+}
+
+.camera-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(15 23 42 / 55%);
+}
+
+.camera-sheet {
+  width: min(720px, 100%);
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 20px 50px rgb(15 23 42 / 24%);
+}
+
+.camera-sheet-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.camera-sheet-header h2 {
+  margin: 0;
+  color: #172033;
+  font-size: 18px;
+}
+
+.camera-sheet-header p {
+  margin: 6px 0 0;
+  color: #687386;
+  font-size: 13px;
+}
+
+.camera-close {
+  height: 35px;
+  padding: 0 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  color: #344054;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.camera-preview {
+  overflow: hidden;
+  height: 360px;
+  border-radius: 12px;
+  background: #0f172a;
+}
+
+.camera-preview video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.camera-error {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  margin: 0;
+  padding: 24px;
+  color: #e2e8f0;
+  font-size: 14px;
+  text-align: center;
+}
+
+.camera-sheet-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.camera-sheet-actions .save-button,
+.camera-sheet-actions .continue-button {
+  width: auto;
+  min-width: 170px;
+  height: 44px;
+  padding: 0 18px;
+}
+
+.camera-sheet-actions .continue-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (max-width: 760px) {
+  .camera-modal {
+    padding: 12px;
+    align-items: end;
+  }
+
+  .camera-preview {
+    height: 280px;
+  }
+
+  .photo-source-actions,
+  .camera-sheet-actions {
+    grid-template-columns: 1fr;
+    flex-direction: column-reverse;
+  }
+
+  .camera-sheet-actions .save-button,
+  .camera-sheet-actions .continue-button {
+    width: 100%;
+  }
 }
 
 .inspection-note {
@@ -858,7 +987,7 @@
     grid-template-columns: 26px 1fr;
   }
 
-  .attention-panel button {
+  .add-photo-button {
     grid-column: 1 / -1;
     width: 100%;
   }

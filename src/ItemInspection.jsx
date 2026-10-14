@@ -108,7 +108,7 @@ function stopStream(stream) {
   stream?.getTracks().forEach((track) => track.stop())
 }
 
-function ItemInspection({ onBack, onContinue }) {
+function ItemInspection({ returnCase, onBack, onContinue }) {
   const [note, setNote] = useState('')
   const [photoCount, setPhotoCount] = useState(2)
   const [weight, setWeight] = useState('1.61')
@@ -121,6 +121,11 @@ function ItemInspection({ onBack, onContinue }) {
   const videoRef = useRef(null)
   const streamRef = useRef(null)
   const addedPhotosRef = useRef([])
+
+  function closePhotoTools() {
+    setPhotoMode(null)
+    setCameraError('')
+  }
 
   useEffect(() => {
     addedPhotosRef.current = addedPhotos
@@ -148,7 +153,7 @@ function ItemInspection({ onBack, onContinue }) {
     if (photoMode !== 'camera') return undefined
 
     let cancelled = false
-    setCameraError('')
+    const videoElement = videoRef.current
 
     const startCamera = async () => {
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -168,9 +173,9 @@ function ItemInspection({ onBack, onContinue }) {
         }
 
         streamRef.current = stream
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream
-          await videoRef.current.play()
+        if (videoElement) {
+          videoElement.srcObject = stream
+          await videoElement.play()
         }
       } catch {
         if (!cancelled) {
@@ -185,14 +190,9 @@ function ItemInspection({ onBack, onContinue }) {
       cancelled = true
       stopStream(streamRef.current)
       streamRef.current = null
-      if (videoRef.current) videoRef.current.srcObject = null
+      if (videoElement) videoElement.srcObject = null
     }
   }, [photoMode])
-
-  const closePhotoTools = () => {
-    setPhotoMode(null)
-    setCameraError('')
-  }
 
   const attachPhoto = (file) => {
     if (!file || !file.type.startsWith('image/')) {
@@ -253,10 +253,10 @@ function ItemInspection({ onBack, onContinue }) {
           <div className="inspection-case">
             <div>
               <span>Return case</span>
-              <strong>RORD-8921</strong>
-              <small>20V Cordless Drill / Model CD20</small>
+              <strong>{returnCase.id}</strong>
+              <small>{returnCase.productName} / {returnCase.productModel}</small>
             </div>
-            <span className="needs-review"><i />Needs review</span>
+            <span className="needs-review"><i />Inspection in progress</span>
           </div>
         </section>
 
@@ -370,7 +370,7 @@ function ItemInspection({ onBack, onContinue }) {
           <span aria-live="polite">{feedback || 'You can continue now or add the recommended photos for higher confidence.'}</span>
         </div>
         <div className="inspection-actions">
-          <button type="button" className="save-button" onClick={() => setFeedback('Inspection saved for later.')}>Save for later</button>
+          <button type="button" className="save-button" onClick={() => setFeedback('Progress is kept for this browser session.')}>Save for later</button>
           <button type="button" className="continue-button" onClick={onContinue}>
             Continue to review
             <img src={continueArrow} alt="" />

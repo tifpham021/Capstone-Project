@@ -9,6 +9,7 @@ import shieldCheck from './assets/figma/inspection/702ae.svg'
 import warningCircle from './assets/figma/inspection/4633e.svg'
 import warningMark from './assets/figma/inspection/630e0.svg'
 import continueArrow from './assets/figma/inspection/d859a.svg'
+import { RETURN_STATUS } from './returnLifecycle.js'
 import './ReviewDecision.css'
 
 const decisions = [
@@ -85,16 +86,25 @@ function ReviewWorkflow({ onIdentify, onInspection }) {
   )
 }
 
-function ReviewDecision({ onIdentify, onBack }) {
-  const [decision, setDecision] = useState('secondary')
-  const [reason, setReason] = useState('Missing serial / identity evidence')
-  const [note, setNote] = useState('')
+function formatActivityTime(occurredAt) {
+  return new Intl.DateTimeFormat([], {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(occurredAt))
+}
+
+function ReviewDecision({ returnCase, onIdentify, onBack, onSubmitDecision }) {
+  const [decision, setDecision] = useState(returnCase.decision?.type || 'secondary')
+  const [reason, setReason] = useState(returnCase.decision?.reason || 'Missing serial / identity evidence')
+  const [note, setNote] = useState(returnCase.decision?.note || '')
   const [feedback, setFeedback] = useState('')
+  const isComplete = returnCase.status === RETURN_STATUS.COMPLETED
 
   const submitDecision = (event) => {
     event.preventDefault()
     const title = decisions.find((option) => option.id === decision)?.title
-    setFeedback(`${title} recorded for RORD-8921.`)
+    onSubmitDecision({ type: decision, title, reason, note })
+    setFeedback(`${title} recorded for ${returnCase.id}.`)
   }
 
   return (
@@ -110,10 +120,10 @@ function ReviewDecision({ onIdentify, onBack }) {
           <div className="review-case">
             <div>
               <span>Return case</span>
-              <strong>RORD-8921</strong>
-              <small>20V Cordless Drill / Model CD20</small>
+              <strong>{returnCase.id}</strong>
+              <small>{returnCase.productName} / {returnCase.productModel}</small>
             </div>
-            <span className="decision-due"><i />Decision due</span>
+            <span className={`decision-due${isComplete ? ' completed' : ''}`}><i />{isComplete ? 'Completed' : 'Decision due'}</span>
           </div>
         </section>
 
@@ -143,11 +153,11 @@ function ReviewDecision({ onIdentify, onBack }) {
               </div>
 
               <dl className="evidence-metadata">
-                <div><dt>Order</dt><dd>#ORD-8921</dd></div>
-                <div><dt>SKU</dt><dd>DRL-20V-KIT</dd></div>
-                <div><dt>Serial</dt><dd>DT20-8821-K7</dd></div>
-                <div><dt>Refund</dt><dd>$129.00</dd></div>
-                <div><dt>Customer</dt><dd>Jane Doe</dd></div>
+                <div><dt>Order</dt><dd>#{returnCase.orderNumber}</dd></div>
+                <div><dt>SKU</dt><dd>{returnCase.sku}</dd></div>
+                <div><dt>Serial</dt><dd>{returnCase.serialNumber}</dd></div>
+                <div><dt>Refund</dt><dd>${returnCase.refundAmount.toFixed(2)}</dd></div>
+                <div><dt>Customer</dt><dd>{returnCase.customerName}</dd></div>
               </dl>
 
               <div className="evidence-review-grid">
@@ -186,10 +196,15 @@ function ReviewDecision({ onIdentify, onBack }) {
             <section className="activity-card" aria-labelledby="activity-title">
               <h2 id="activity-title">Case activity</h2>
               <ol>
-                <li className="done"><i /><span>10:36 - Return identified</span></li>
-                <li className="done"><i /><span>10:39 - Evidence captured</span></li>
-                <li className="done"><i /><span>10:42 - Analysis complete</span></li>
-                <li className="current"><i /><span>Now - Awaiting decision</span></li>
+                {returnCase.history.map((activity, index) => (
+                  <li
+                    className={index === returnCase.history.length - 1 ? 'current' : 'done'}
+                    key={`${activity.status}-${activity.occurredAt}`}
+                  >
+                    <i />
+                    <span>{formatActivityTime(activity.occurredAt)} - {activity.label}</span>
+                  </li>
+                ))}
               </ol>
             </section>
           </div>
@@ -202,7 +217,7 @@ function ReviewDecision({ onIdentify, onBack }) {
               <div><strong>AI signals are advisory only.</strong><small>Your decision and rationale become the audit record.</small></div>
             </div>
 
-            <fieldset>
+            <fieldset disabled={isComplete}>
               <legend className="sr-only">Final decision</legend>
               {decisions.map((option) => (
                 <label className={`decision-option ${decision === option.id ? 'selected' : ''} ${option.id}`} key={option.id}>
@@ -222,7 +237,7 @@ function ReviewDecision({ onIdentify, onBack }) {
 
             <label className="decision-field">
               <span>Reason for escalation</span>
-              <select value={reason} onChange={(event) => setReason(event.target.value)}>
+              <select value={reason} onChange={(event) => setReason(event.target.value)} disabled={isComplete}>
                 <option>Missing serial / identity evidence</option>
                 <option>Visual evidence is inconclusive</option>
                 <option>Weight measurement is inconsistent</option>
@@ -236,6 +251,7 @@ function ReviewDecision({ onIdentify, onBack }) {
                 value={note}
                 onChange={(event) => setNote(event.target.value)}
                 placeholder="Explain what the next reviewer should verify..."
+                disabled={isComplete}
               />
               <small>{decision === 'approve' ? 'Optional for approvals' : 'Required for escalations and fraud flags'}</small>
             </label>
@@ -248,12 +264,12 @@ function ReviewDecision({ onIdentify, onBack }) {
       <footer className="review-footer">
         <div className="review-confirmation">
           <span>✓</span>
-          <div><strong>Final action requires confirmation</strong><small aria-live="polite">{feedback || 'The selected outcome will be recorded in the case audit log.'}</small></div>
+          <div><strong>{isComplete ? 'Decision recorded' : 'Final action requires confirmation'}</strong><small aria-live="polite">{feedback || (isComplete ? `${returnCase.decision.title} completed this return.` : 'The selected outcome will be recorded in the case audit log.')}</small></div>
         </div>
         <div className="review-actions">
           <button type="button" className="back-button" onClick={onBack}>‹&nbsp; Back to inspection</button>
-          <button type="submit" form="review-decision-form" className="submit-review-button">
-            Send for review
+          <button type="submit" form="review-decision-form" className="submit-review-button" disabled={isComplete}>
+            {isComplete ? 'Decision recorded' : 'Send for review'}
             <img src={continueArrow} alt="" />
           </button>
         </div>

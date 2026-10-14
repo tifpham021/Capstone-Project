@@ -198,6 +198,11 @@
   background: currentColor;
 }
 
+.decision-due.completed {
+  color: #166534;
+  background: #ecfdf3;
+}
+
 .review-dashboard {
   height: 656px;
   display: grid;
@@ -825,6 +830,11 @@
 .submit-review-button img {
   width: 8px;
   height: 14px;
+}
+
+.submit-review-button:disabled {
+  cursor: not-allowed;
+  opacity: .62;
 }
 
 @media (max-width: 1180px) {

@@ -247,6 +247,10 @@
   outline-offset: 2px;
 }
 
+.workflow-step.locked {
+  opacity: .62;
+}
+
 .workflow-step:not(:last-child)::after {
   content: '';
   position: absolute;
@@ -641,6 +645,49 @@
   margin-top: 28px;
   color: var(--slate-500);
   font-size: 13px;
+}
+
+.identified-return {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid #bbf7d0;
+  border-radius: 12px;
+  background: #f0fdf4;
+}
+
+.identified-return > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.identified-return strong {
+  color: #166534;
+  font-size: 14px;
+}
+
+.identified-return span {
+  overflow: hidden;
+  color: #4b7a5c;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.identified-return button {
+  min-width: 152px;
+  height: 40px;
+  border-radius: 9px;
+  color: #fff;
+  background: #15803d;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
 }
 
 .info {
@@ -1061,6 +1108,15 @@
 
   .find-button {
     height: 54px;
+  }
+
+  .identified-return {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .identified-return button {
+    width: 100%;
   }
 
   .support-column {

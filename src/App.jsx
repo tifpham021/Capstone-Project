@@ -24,6 +24,13 @@ import shieldCheck from './assets/figma/70c7b.svg'
 import pageBackground from './assets/figma/24aa6.svg'
 import ItemInspection from './ItemInspection.jsx'
 import ReviewDecision from './ReviewDecision.jsx'
+import {
+  RETURN_STATUS,
+  canOpenStep,
+  createIdentifiedReturn,
+  getStatusLabel,
+  transitionReturn,
+} from './returnLifecycle.js'
 import './App.css'
 
 const workflowSteps = [
@@ -37,7 +44,8 @@ function LayeredIcon({ className = '', children }) {
 }
 
 function App() {
-  const [screen, setScreen] = useState('inspection')
+  const [screen, setScreen] = useState('identify')
+  const [returnCase, setReturnCase] = useState(null)
   const [mode, setMode] = useState('barcode')
   const [lookup, setLookup] = useState('')
   const [status, setStatus] = useState('')
@@ -54,18 +62,69 @@ function App() {
   const findReturn = (event) => {
     event.preventDefault()
     const value = lookup.trim()
-    setStatus(
-      value
-        ? `Searching for ${value}…`
-        : 'Enter an order number, SKU, serial number, or return ID.',
-    )
+    if (!value) {
+      setReturnCase((current) => (
+        current?.status === RETURN_STATUS.IDENTIFIED ? null : current
+      ))
+      setStatus('Enter an order number, SKU, serial number, or return ID.')
+      return
+    }
+
+    const identifiedReturn = createIdentifiedReturn(value)
+    setReturnCase(identifiedReturn)
+    setStatus(`Return ${identifiedReturn.id} identified. Confirm it to begin the inspection.`)
+  }
+
+  const updateLookup = (event) => {
+    const value = event.target.value
+    setLookup(value)
+    setStatus('')
+    setReturnCase((current) => (
+      current?.status === RETURN_STATUS.IDENTIFIED
+      && value.trim() !== current.lookupIdentifier
+        ? null
+        : current
+    ))
+  }
+
+  const openStep = (step) => {
+    if (canOpenStep(returnCase, step)) setScreen(step)
+  }
+
+  const beginInspection = () => {
+    setReturnCase((current) => (
+      current.status === RETURN_STATUS.IDENTIFIED
+        ? transitionReturn(current, RETURN_STATUS.INSPECTION_IN_PROGRESS)
+        : current
+    ))
+    setScreen('inspection')
+  }
+
+  const continueToReview = () => {
+    setReturnCase((current) => (
+      current.status === RETURN_STATUS.INSPECTION_IN_PROGRESS
+        ? transitionReturn(current, RETURN_STATUS.AWAITING_DECISION)
+        : current
+    ))
+    setScreen('review')
+  }
+
+  const completeReturn = (decision) => {
+    setReturnCase((current) => (
+      current.status === RETURN_STATUS.AWAITING_DECISION
+        ? transitionReturn(current, RETURN_STATUS.COMPLETED, {
+            decision,
+            activityLabel: `Decision recorded: ${decision.title}`,
+          })
+        : current
+    ))
   }
 
   return (
     <div className="app-shell" style={{ backgroundImage: `url(${pageBackground})` }}>
       <header className="topbar">
         <div className="topbar-inner">
-          <a className="brand" href="#main" aria-label="ReturnScan home" onClick={() => setScreen('identify')}>
+          <a className="brand" href="#main" aria-label="ReturnScan home" onClick={() => openStep('identify')}>
             <LayeredIcon className="brand-icon">
               <img src={logoPlate} alt="" />
               <img src={logoMark} alt="" />
@@ -74,7 +133,7 @@ function App() {
           </a>
 
           <nav className="primary-nav" aria-label="Primary navigation">
-            <button className="nav-link active" type="button" onClick={() => setScreen('identify')}>New Return</button>
+            <button className="nav-link active" type="button" onClick={() => openStep('identify')}>New Return</button>
             <button className="nav-link" type="button">Return History</button>
             <button className="nav-link queue-link" type="button">
               Review Queue
@@ -105,16 +164,20 @@ function App() {
       {screen === 'identify' ? (
       <main id="main" className="page-content">
         <ol className="workflow" aria-label="Return workflow">
-          {workflowSteps.map(([number, title, description], index) => (
+          {workflowSteps.map(([number, title, description], index) => {
+            const step = ['identify', 'inspection', 'review'][index]
+            const available = canOpenStep(returnCase, step)
+            return (
             <li
-              className={`${index === 0 ? 'workflow-step active' : 'workflow-step'}${index === 1 ? ' clickable' : ''}`}
+              className={`${index === 0 ? 'workflow-step active' : 'workflow-step'}${available && index > 0 ? ' clickable' : ''}${!available ? ' locked' : ''}`}
               key={number}
-              role={index === 1 ? 'button' : undefined}
-              tabIndex={index === 1 ? 0 : undefined}
-              aria-label={index === 1 ? 'Open item inspection' : undefined}
-              onClick={index === 1 ? () => setScreen('inspection') : undefined}
-              onKeyDown={index === 1 ? (event) => {
-                if (event.key === 'Enter' || event.key === ' ') setScreen('inspection')
+              role={available && index > 0 ? 'button' : undefined}
+              tabIndex={available && index > 0 ? 0 : undefined}
+              aria-disabled={!available}
+              aria-label={available && index > 0 ? `Open ${title.toLowerCase()}` : undefined}
+              onClick={available && index > 0 ? () => openStep(step) : undefined}
+              onKeyDown={available && index > 0 ? (event) => {
+                if (event.key === 'Enter' || event.key === ' ') openStep(step)
               } : undefined}
             >
               <span className="step-number">{number}</span>
@@ -123,7 +186,8 @@ function App() {
                 <small>{description}</small>
               </span>
             </li>
-          ))}
+            )
+          })}
         </ol>
 
         <section className="intro" aria-labelledby="page-title">
@@ -133,8 +197,8 @@ function App() {
           </div>
           <div className="case-status">
             <span>Return case</span>
-            <strong>Not created yet</strong>
-            <small>Created after identification</small>
+            <strong>{returnCase?.id || 'Not created yet'}</strong>
+            <small>{getStatusLabel(returnCase)}</small>
           </div>
         </section>
 
@@ -199,7 +263,7 @@ function App() {
                   <input
                     ref={inputRef}
                     value={lookup}
-                    onChange={(event) => setLookup(event.target.value)}
+                    onChange={updateLookup}
                     placeholder="Enter order number, SKU, serial number, or return ID"
                   />
                 </label>
@@ -209,6 +273,17 @@ function App() {
                 <LayeredIcon className="info"><img src={infoIcon} alt="" /></LayeredIcon>
                 <span>{status || 'A return case is created only after the item and order are confirmed.'}</span>
               </div>
+              {returnCase ? (
+                <div className="identified-return" aria-live="polite">
+                  <div>
+                    <strong>{returnCase.productName}</strong>
+                    <span>Order #{returnCase.orderNumber} / {returnCase.productModel}</span>
+                  </div>
+                  <button type="button" onClick={beginInspection}>
+                    {returnCase.status === RETURN_STATUS.IDENTIFIED ? 'Begin inspection' : 'Continue return'}
+                  </button>
+                </div>
+              ) : null}
             </div>
           </section>
 
@@ -276,13 +351,16 @@ function App() {
       </main>
       ) : screen === 'inspection' ? (
         <ItemInspection
-          onBack={() => setScreen('identify')}
-          onContinue={() => setScreen('review')}
+          returnCase={returnCase}
+          onBack={() => openStep('identify')}
+          onContinue={continueToReview}
         />
       ) : (
         <ReviewDecision
-          onIdentify={() => setScreen('identify')}
-          onBack={() => setScreen('inspection')}
+          returnCase={returnCase}
+          onIdentify={() => openStep('identify')}
+          onBack={() => openStep('inspection')}
+          onSubmitDecision={completeReturn}
         />
       )}
     </div>

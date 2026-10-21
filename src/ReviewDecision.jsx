@@ -93,7 +93,7 @@ function formatActivityTime(occurredAt) {
   }).format(new Date(occurredAt))
 }
 
-function ReviewDecision({ returnCase, onIdentify, onBack, onSubmitDecision }) {
+function ReviewDecision({ returnCase, onIdentify, onBack, onSubmitDecision, reviewerName }) {
   const [decision, setDecision] = useState(returnCase.decision?.type || 'secondary')
   const [reason, setReason] = useState(returnCase.decision?.reason || 'Missing serial / identity evidence')
   const [note, setNote] = useState(returnCase.decision?.note || '')
@@ -256,7 +256,7 @@ function ReviewDecision({ returnCase, onIdentify, onBack, onSubmitDecision }) {
               <small>{decision === 'approve' ? 'Optional for approvals' : 'Required for escalations and fraud flags'}</small>
             </label>
 
-            <span className="audit-note">Reviewer: Jane Doe / Every decision is recorded in the audit log.</span>
+            <span className="audit-note">Reviewer: {reviewerName} / Every decision is recorded in the audit log.</span>
           </form>
         </div>
       </main>

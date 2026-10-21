@@ -1,8 +1,7 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import logoPlate from './assets/figma/2b7d2.svg'
 import logoMark from './assets/figma/733b6.svg'
 import notificationBubble from './assets/figma/894b8.svg'
-import avatarPlate from './assets/figma/9b37f.svg'
 import chevron from './assets/figma/21c36.svg'
 import scanIconPlate from './assets/figma/14ca8.svg'
 import scanIcon from './assets/figma/316d0.svg'
@@ -24,6 +23,16 @@ import shieldCheck from './assets/figma/70c7b.svg'
 import pageBackground from './assets/figma/24aa6.svg'
 import ItemInspection from './ItemInspection.jsx'
 import ReviewDecision from './ReviewDecision.jsx'
+import LoginPage from './LoginPage.jsx'
+import AccountDashboard, { ProfileAvatar } from './AccountDashboard.jsx'
+import { loadSession, signOut } from './auth/authService.js'
+import {
+  clearDecisionHistory,
+  loadDecisionHistory,
+  loadPreferences,
+  saveDecisionHistory,
+  savePreferences,
+} from './accountStorage.js'
 import {
   RETURN_STATUS,
   canOpenStep,
@@ -39,14 +48,76 @@ const workflowSteps = [
   ['3', 'Review decision', 'Approve, escalate, or flag'],
 ]
 
+const SAMPLE_LOOKUP = 'ORD-8921'
+
 function LayeredIcon({ className = '', children }) {
   return <span className={`layered-icon ${className}`}>{children}</span>
 }
 
-function App() {
+function ProfileMenu({ user, onOpenAccount, onSignOut }) {
+  const [open, setOpen] = useState(false)
+  const menuRef = useRef(null)
+
+  useEffect(() => {
+    if (!open) return undefined
+
+    const closeOnOutsideClick = (event) => {
+      if (!menuRef.current?.contains(event.target)) setOpen(false)
+    }
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', closeOnOutsideClick)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [open])
+
+  const choose = (action) => {
+    setOpen(false)
+    action()
+  }
+
+  return (
+    <div className="profile-menu" ref={menuRef}>
+      <button
+        className="profile-button"
+        type="button"
+        aria-label={`Open ${user.name} profile menu`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <ProfileAvatar user={user} size="small" />
+        <span className="profile-copy">
+          <strong>{user.name}</strong>
+          <small>{user.role}</small>
+        </span>
+        <img className="chevron" src={chevron} alt="" />
+      </button>
+      {open ? (
+        <div className="profile-dropdown" role="menu" aria-label="Account">
+          <div className="profile-dropdown-header">
+            <strong>{user.name}</strong>
+            <small>{user.email}</small>
+          </div>
+          <button type="button" role="menuitem" onClick={() => choose(onOpenAccount)}>Account dashboard</button>
+          <button type="button" role="menuitem" className="sign-out-item" onClick={() => choose(onSignOut)}>Sign out</button>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function Workstation({ session, onSignOut }) {
+  const { user } = session
   const [screen, setScreen] = useState('identify')
   const [returnCase, setReturnCase] = useState(null)
-  const [mode, setMode] = useState('barcode')
+  const [preferences, setPreferences] = useState(() => loadPreferences(user.email))
+  const [history, setHistory] = useState(() => loadDecisionHistory(user.email))
+  const [mode, setMode] = useState(preferences.defaultLookupMode)
   const [lookup, setLookup] = useState('')
   const [status, setStatus] = useState('')
   const inputRef = useRef(null)
@@ -87,8 +158,30 @@ function App() {
     ))
   }
 
-  const openStep = (step) => {
-    if (canOpenStep(returnCase, step)) setScreen(step)
+  // Steps 2 and 3 are always reachable. Without an identified return, the
+  // sample return is loaded and moved forward so the page has case data.
+  const openStep = (step, currentReturn = returnCase) => {
+    if (currentReturn === returnCase && canOpenStep(currentReturn, step)) {
+      setScreen(step)
+      return
+    }
+    if (step === 'identify') {
+      startNewReturn()
+      return
+    }
+
+    let nextReturn = currentReturn || createIdentifiedReturn(SAMPLE_LOOKUP)
+    if (nextReturn.status === RETURN_STATUS.IDENTIFIED) {
+      nextReturn = transitionReturn(nextReturn, RETURN_STATUS.INSPECTION_IN_PROGRESS)
+    }
+    if (step === 'review' && nextReturn.status === RETURN_STATUS.INSPECTION_IN_PROGRESS) {
+      nextReturn = transitionReturn(nextReturn, RETURN_STATUS.AWAITING_DECISION)
+    }
+
+    setReturnCase(nextReturn)
+    setLookup(nextReturn.lookupIdentifier)
+    setStatus('')
+    setScreen(step)
   }
 
   const beginInspection = () => {
@@ -110,14 +203,50 @@ function App() {
   }
 
   const completeReturn = (decision) => {
-    setReturnCase((current) => (
-      current.status === RETURN_STATUS.AWAITING_DECISION
-        ? transitionReturn(current, RETURN_STATUS.COMPLETED, {
-            decision,
-            activityLabel: `Decision recorded: ${decision.title}`,
-          })
-        : current
-    ))
+    if (returnCase?.status !== RETURN_STATUS.AWAITING_DECISION) return
+
+    const completedReturn = transitionReturn(returnCase, RETURN_STATUS.COMPLETED, {
+      decision,
+      activityLabel: `Decision recorded: ${decision.title}`,
+    })
+    const nextHistory = [{
+      id: completedReturn.id,
+      productName: completedReturn.productName,
+      orderNumber: completedReturn.orderNumber,
+      refundAmount: completedReturn.refundAmount,
+      decision,
+      completedAt: completedReturn.history.at(-1).occurredAt,
+    }, ...history]
+
+    setReturnCase(completedReturn)
+    setHistory(nextHistory)
+    saveDecisionHistory(user.email, nextHistory)
+  }
+
+  const startNewReturn = () => {
+    if (returnCase?.status === RETURN_STATUS.COMPLETED) {
+      setReturnCase(null)
+      setLookup('')
+      setStatus('')
+    }
+    setMode(preferences.defaultLookupMode)
+    setScreen('identify')
+  }
+
+  const resumeReturn = () => {
+    if (canOpenStep(returnCase, 'review')) setScreen('review')
+    else if (canOpenStep(returnCase, 'inspection')) setScreen('inspection')
+    else setScreen('identify')
+  }
+
+  const updatePreferences = (nextPreferences) => {
+    setPreferences(nextPreferences)
+    savePreferences(user.email, nextPreferences)
+  }
+
+  const clearHistory = () => {
+    setHistory([])
+    clearDecisionHistory(user.email)
   }
 
   return (
@@ -133,50 +262,70 @@ function App() {
           </a>
 
           <nav className="primary-nav" aria-label="Primary navigation">
-            <button className="nav-link active" type="button" onClick={() => openStep('identify')}>New Return</button>
-            <button className="nav-link" type="button">Return History</button>
+            <button
+              className={screen === 'account' ? 'nav-link' : 'nav-link active'}
+              type="button"
+              onClick={startNewReturn}
+            >
+              New Return
+            </button>
+            <button
+              className={screen === 'account' ? 'nav-link active' : 'nav-link'}
+              type="button"
+              onClick={() => setScreen('account')}
+            >
+              Return History
+            </button>
             <button className="nav-link queue-link" type="button">
               Review Queue
-              <LayeredIcon className="notification-badge">
-                <img src={notificationBubble} alt="" />
-                <span>3</span>
-              </LayeredIcon>
+              {preferences.queueNotifications ? (
+                <LayeredIcon className="notification-badge">
+                  <img src={notificationBubble} alt="" />
+                  <span>3</span>
+                </LayeredIcon>
+              ) : null}
             </button>
           </nav>
 
           <div className="account-tools">
             <span className="devices-ready"><i />Devices ready</span>
-            <button className="profile-button" type="button" aria-label="Open Jane Doe profile menu">
-              <LayeredIcon className="avatar">
-                <img src={avatarPlate} alt="" />
-                <span>JD</span>
-              </LayeredIcon>
-              <span className="profile-copy">
-                <strong>Jane Doe</strong>
-                <small>Reviewer</small>
-              </span>
-              <img className="chevron" src={chevron} alt="" />
-            </button>
+            <ProfileMenu user={user} onOpenAccount={() => setScreen('account')} onSignOut={onSignOut} />
           </div>
         </div>
       </header>
 
-      {screen === 'identify' ? (
+      {screen === 'account' ? (
+        <AccountDashboard
+          session={session}
+          activeReturn={returnCase}
+          history={history}
+          preferences={preferences}
+          onPreferencesChange={updatePreferences}
+          onClearHistory={clearHistory}
+          onStartReturn={startNewReturn}
+          onResumeReturn={resumeReturn}
+          onOpenStep={(step) => openStep(
+            step,
+            returnCase?.status === RETURN_STATUS.COMPLETED ? null : returnCase,
+          )}
+          onSignOut={onSignOut}
+        />
+      ) : screen === 'identify' ? (
       <main id="main" className="page-content">
         <ol className="workflow" aria-label="Return workflow">
           {workflowSteps.map(([number, title, description], index) => {
             const step = ['identify', 'inspection', 'review'][index]
-            const available = canOpenStep(returnCase, step)
+            const clickable = index > 0
             return (
             <li
-              className={`${index === 0 ? 'workflow-step active' : 'workflow-step'}${available && index > 0 ? ' clickable' : ''}${!available ? ' locked' : ''}`}
+              className={`${index === 0 ? 'workflow-step active' : 'workflow-step'}${clickable ? ' clickable' : ''}`}
               key={number}
-              role={available && index > 0 ? 'button' : undefined}
-              tabIndex={available && index > 0 ? 0 : undefined}
-              aria-disabled={!available}
-              aria-label={available && index > 0 ? `Open ${title.toLowerCase()}` : undefined}
-              onClick={available && index > 0 ? () => openStep(step) : undefined}
-              onKeyDown={available && index > 0 ? (event) => {
+              role={clickable ? 'button' : undefined}
+              tabIndex={clickable ? 0 : undefined}
+              aria-label={clickable ? `Open ${title.toLowerCase()}` : undefined}
+              title={clickable && !canOpenStep(returnCase, step) ? 'Opens with the sample return ORD-8921' : undefined}
+              onClick={clickable ? () => openStep(step) : undefined}
+              onKeyDown={clickable ? (event) => {
                 if (event.key === 'Enter' || event.key === ' ') openStep(step)
               } : undefined}
             >
@@ -247,7 +396,9 @@ function App() {
                   <img src={clockIcon} alt="" />
                   <img src={clockHand} alt="" />
                 </LayeredIcon>
-                {mode === 'barcode' ? 'Auto-detect is enabled' : 'Manual lookup is enabled'}
+                {mode === 'order'
+                  ? 'Manual lookup is enabled'
+                  : preferences.autoDetect ? 'Auto-detect is enabled' : 'Auto-detect is off'}
               </span>
             </div>
 
@@ -361,10 +512,31 @@ function App() {
           onIdentify={() => openStep('identify')}
           onBack={() => openStep('inspection')}
           onSubmitDecision={completeReturn}
+          reviewerName={user.name}
         />
       )}
     </div>
   )
+}
+
+function App() {
+  const [session, setSession] = useState(loadSession)
+  const [notice, setNotice] = useState('')
+
+  const handleSignIn = (nextSession) => {
+    setNotice('')
+    setSession(nextSession)
+  }
+
+  const handleSignOut = () => {
+    signOut(session)
+    setSession(null)
+    setNotice('You have been signed out.')
+  }
+
+  if (!session) return <LoginPage onSignIn={handleSignIn} notice={notice} />
+
+  return <Workstation key={session.user.email} session={session} onSignOut={handleSignOut} />
 }
 
 export default App

@@ -23,3 +23,21 @@ Open the local URL printed in the terminal. Vite typically uses [http://localhos
 - `npm run build` creates a production build in `dist/`.
 - `npm run preview` serves the production build locally after running `npm run build`.
 - `npm run lint` runs ESLint.
+
+## Signing in
+
+The app opens on a sign-in page. Three sign-in methods are available:
+
+- **Email and password** — the prototype has no backend, so it accepts built-in demo accounts only:
+  - `jane.doe@returnscan.com` / `ReturnScan2026!` (Reviewer)
+  - `alex.kim@returnscan.com` / `ReturnScan2026!` (Supervisor)
+- **Google** and **Microsoft** — real OAuth popups. They need client IDs; until those are set, the buttons show a "Setup needed" badge and explain what is missing.
+
+To enable Google and Microsoft sign-in, copy `.env.example` to `.env.local`, fill in the IDs, and restart `npm run dev`:
+
+1. **Google:** in Google Cloud Console, create an OAuth client ID of type *Web application* and add `http://localhost:5173` to *Authorized JavaScript origins*. Put the client ID in `VITE_GOOGLE_CLIENT_ID`.
+2. **Microsoft:** in the Microsoft Entra admin center, register an app and add a *Single-page application* redirect URI of `http://localhost:5173/auth-redirect.html`. Put the Application (client) ID in `VITE_MICROSOFT_CLIENT_ID`. Leave `VITE_MICROSOFT_TENANT_ID=common` to allow both work and personal accounts.
+
+If Vite runs on a different port, register that origin instead.
+
+Once signed in, open the profile menu in the top-right corner to reach the **Account dashboard** or **Sign out**. The dashboard shows decision totals, recent decisions, the open return, profile and session details, and station preferences. Preferences and decision history are stored in the browser per account.

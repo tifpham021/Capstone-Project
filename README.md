@@ -41,3 +41,12 @@ To enable Google and Microsoft sign-in, copy `.env.example` to `.env.local`, fil
 If Vite runs on a different port, register that origin instead.
 
 Once signed in, open the profile menu in the top-right corner to reach the **Account dashboard** or **Sign out**. The dashboard shows decision totals, recent decisions, the open return, profile and session details, and station preferences. Preferences and decision history are stored in the browser per account.
+
+## Scanning item identity
+
+On the **Identify return** screen, the scanner panel can read barcodes and QR codes in two ways:
+
+- **Scan with camera** opens the station camera and reads a code automatically as soon as it is in frame. The browser asks for camera permission the first time. Camera access only works on `localhost` or over HTTPS.
+- **Scan from photo** reads the code from an image file instead.
+
+A detected code is placed in the lookup field. With the **Scanner auto-detect** preference on (account dashboard), the return is looked up immediately; with it off, the reviewer checks the code and selects **Find return**. Scanning uses [ZXing](https://github.com/zxing-js/browser), which supports QR, Code 128, Code 39, EAN, UPC, Data Matrix and other common formats.

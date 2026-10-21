@@ -5,9 +5,6 @@ import notificationBubble from './assets/figma/894b8.svg'
 import chevron from './assets/figma/21c36.svg'
 import scanIconPlate from './assets/figma/14ca8.svg'
 import scanIcon from './assets/figma/316d0.svg'
-import barcodeScanner from './assets/figma/c6ae5.svg'
-import clockIcon from './assets/figma/557ea.svg'
-import clockHand from './assets/figma/b4663.svg'
 import searchIcon from './assets/figma/0967f.svg'
 import searchHandle from './assets/figma/64074.svg'
 import infoIcon from './assets/figma/afda1.svg'
@@ -23,6 +20,7 @@ import shieldCheck from './assets/figma/70c7b.svg'
 import pageBackground from './assets/figma/24aa6.svg'
 import ItemInspection from './ItemInspection.jsx'
 import ReviewDecision from './ReviewDecision.jsx'
+import BarcodeScanner from './BarcodeScanner.jsx'
 import LoginPage from './LoginPage.jsx'
 import AccountDashboard, { ProfileAvatar } from './AccountDashboard.jsx'
 import { loadSession, signOut } from './auth/authService.js'
@@ -130,9 +128,8 @@ function Workstation({ session, onSignOut }) {
     }
   }
 
-  const findReturn = (event) => {
-    event.preventDefault()
-    const value = lookup.trim()
+  const lookUpReturn = (rawValue) => {
+    const value = rawValue.trim()
     if (!value) {
       setReturnCase((current) => (
         current?.status === RETURN_STATUS.IDENTIFIED ? null : current
@@ -144,6 +141,23 @@ function Workstation({ session, onSignOut }) {
     const identifiedReturn = createIdentifiedReturn(value)
     setReturnCase(identifiedReturn)
     setStatus(`Return ${identifiedReturn.id} identified. Confirm it to begin the inspection.`)
+  }
+
+  const findReturn = (event) => {
+    event.preventDefault()
+    lookUpReturn(lookup)
+  }
+
+  // A scanned code fills the lookup field. With auto-detect on it is looked up
+  // right away; otherwise the reviewer confirms it with Find return.
+  const handleScannedCode = (code) => {
+    setLookup(code)
+    if (preferences.autoDetect) {
+      lookUpReturn(code)
+    } else {
+      setReturnCase((current) => (current?.status === RETURN_STATUS.IDENTIFIED ? null : current))
+      setStatus(`Scanned ${code}. Check it, then select Find return.`)
+    }
   }
 
   const updateLookup = (event) => {
@@ -382,25 +396,11 @@ function Workstation({ session, onSignOut }) {
               </div>
             </div>
 
-            <div className={mode === 'barcode' ? 'scanner-panel' : 'scanner-panel order-mode'}>
-              <span className="scanner-ready"><i />Scanner ready</span>
-              <img className="barcode-art" src={barcodeScanner} alt="Barcode framed by scanner guides" />
-              <h3>{mode === 'barcode' ? 'Ready to scan' : 'Order lookup selected'}</h3>
-              <p>
-                {mode === 'barcode'
-                  ? 'Hold the code 6 to 12 inches from the scanner'
-                  : 'Enter the return identifier below to continue'}
-              </p>
-              <span className="auto-detect">
-                <LayeredIcon className="clock">
-                  <img src={clockIcon} alt="" />
-                  <img src={clockHand} alt="" />
-                </LayeredIcon>
-                {mode === 'order'
-                  ? 'Manual lookup is enabled'
-                  : preferences.autoDetect ? 'Auto-detect is enabled' : 'Auto-detect is off'}
-              </span>
-            </div>
+            <BarcodeScanner
+              mode={mode}
+              autoDetect={preferences.autoDetect}
+              onDetected={handleScannedCode}
+            />
 
             <div className="manual-lookup">
               <div className="divider"><span>Or look up manually</span></div>

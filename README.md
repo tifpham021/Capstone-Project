@@ -24,11 +24,33 @@ Open the local URL printed in the terminal. Vite typically uses [http://localhos
 - `npm run preview` serves the production build locally after running `npm run build`.
 - `npm run lint` runs ESLint.
 
+## Computer vision backend
+
+The Python/FastAPI service lives in [`backend/`](backend/README.md). It supports
+genuine-reference enrollment, one-image or batch verification, and discrepancy
+images. It combines frozen DINOv2 ViT-S/14, PatchCore-style patch comparisons,
+ALIKED + LightGlue and an OpenCV SIFT fallback. Apple Silicon, CUDA and CPU are
+supported. Model weights download on the first verification request.
+
+```bash
+python3 -m venv backend/.venv
+source backend/.venv/bin/activate
+python -m pip install -r backend/requirements.txt
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --workers 1
+```
+
+Open `http://127.0.0.1:8000/docs` to enroll reference photos and test uploads.
+`POST /v1/verify` returns an uncalibrated visual-match confidence, algorithm
+metrics, latency and URLs for discrepancy PNGs. See the backend README for curl
+and JavaScript examples, batch uploads, API-key protection and limitations.
+The React inspection/review screens still use their demo values; this change
+exposes the backend API without replacing the UI workflow or its sign-in system.
+
 ## Signing in
 
 The app opens on a sign-in page. Three sign-in methods are available:
 
-- **Email and password** — the prototype has no backend, so it accepts built-in demo accounts only:
+- **Email and password** — authentication is still a frontend prototype, so it accepts built-in demo accounts only:
   - `jane.doe@returnscan.com` / `ReturnScan2026!` (Reviewer)
   - `alex.kim@returnscan.com` / `ReturnScan2026!` (Supervisor)
 - **Google** and **Microsoft** — real OAuth popups. They need client IDs; until those are set, the buttons show a "Setup needed" badge and explain what is missing.

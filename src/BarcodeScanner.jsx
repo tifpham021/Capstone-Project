@@ -1,7 +1,8 @@
+import TouchIcon from './TouchIcon.jsx'
+import AiIdentify from './AiIdentify.jsx'
 import { useEffect, useRef, useState } from 'react'
 import barcodeScanner from './assets/figma/c6ae5.svg'
-import clockIcon from './assets/figma/557ea.svg'
-import clockHand from './assets/figma/b4663.svg'
+import preview from './assets/station-preview.png'
 
 // Reads barcodes and QR codes from the station camera or from a photo.
 // ZXing is loaded on first use so it does not slow down the first page load.
@@ -32,8 +33,9 @@ function cameraErrorMessage(error) {
   return 'The camera could not be started. Scan from a photo instead.'
 }
 
-function BarcodeScanner({ mode, autoDetect, onDetected }) {
-  const [scanState, setScanState] = useState('idle')
+function BarcodeScanner({ autoStart = false, onDetected }) {
+  const [scanState, setScanState] = useState(autoStart ? 'starting' : 'idle')
+  const [aiMode, setAiMode] = useState(false)
   const [message, setMessage] = useState('')
   const [lastCode, setLastCode] = useState(null)
   const videoRef = useRef(null)
@@ -45,9 +47,7 @@ function BarcodeScanner({ mode, autoDetect, onDetected }) {
   }, [onDetected])
 
   const scanning = scanState === 'starting' || scanState === 'scanning'
-  const orderMode = mode === 'order'
-  // Switching to Order ID unmounts the preview, which stops the camera.
-  const showVideo = scanning && !orderMode
+  const showVideo = scanning && !aiMode
 
   useEffect(() => {
     if (!showVideo) return undefined
@@ -133,81 +133,20 @@ function BarcodeScanner({ mode, autoDetect, onDetected }) {
     }
   }
 
-  let title = 'Ready to scan'
-  let detail = 'Hold the code 6 to 12 inches from the scanner, or use the camera.'
-  if (orderMode) {
-    title = 'Order lookup selected'
-    detail = 'Enter the return identifier below to continue'
-  } else if (scanState === 'reading') {
-    title = 'Reading photo…'
-    detail = 'Looking for a barcode or QR code in the image.'
-  } else if (scanState === 'detected' && lastCode) {
-    title = `${lastCode.format} detected`
-    detail = autoDetect
-      ? `Read ${lastCode.text} and looked it up automatically.`
-      : `Read ${lastCode.text}. Press Find return to continue.`
-  } else if (scanState === 'error') {
-    title = 'Scan not completed'
-    detail = message
-  }
-
-  return (
-    <div className={`scanner-panel${orderMode ? ' order-mode' : ''}${showVideo ? ' camera-live' : ''}${scanState === 'detected' && !orderMode ? ' detected' : ''}`}>
-      <span className="scanner-ready">
-        <i />
-        {showVideo ? (scanState === 'starting' ? 'Starting camera…' : 'Camera scanning') : 'Scanner ready'}
-      </span>
-
-      {showVideo ? (
-        <>
-          <video ref={videoRef} className="scanner-video" autoPlay playsInline muted aria-label="Live camera preview" />
-          <span className="scanner-guide" aria-hidden="true"><i /></span>
-          <p className="scanner-video-hint" aria-live="polite">Center the barcode or QR code inside the frame. It is read automatically.</p>
-          <button type="button" className="scanner-stop" onClick={stopCamera}>Stop camera</button>
-        </>
-      ) : (
-        <>
-          <img className="barcode-art" src={barcodeScanner} alt="Barcode framed by scanner guides" />
-          <h3>{title}</h3>
-          <p aria-live="polite">{detail}</p>
-          {orderMode ? null : (
-            <div className="scanner-actions">
-              <button type="button" className="scanner-action primary" onClick={startCamera}>
-                {scanState === 'detected' || scanState === 'error' ? 'Scan again with camera' : 'Scan with camera'}
-              </button>
-              <button
-                type="button"
-                className="scanner-action"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={scanState === 'reading'}
-              >
-                Scan from photo
-              </button>
-            </div>
-          )}
-          <span className="auto-detect">
-            <span className="layered-icon clock">
-              <img src={clockIcon} alt="" />
-              <img src={clockHand} alt="" />
-            </span>
-            {orderMode
-              ? 'Manual lookup is enabled'
-              : autoDetect ? 'Auto-detect is enabled' : 'Auto-detect is off'}
-          </span>
-        </>
-      )}
-
-      <input
-        ref={fileInputRef}
-        className="sr-only"
-        type="file"
-        accept="image/*"
-        onChange={scanPhoto}
-        tabIndex={-1}
-        aria-hidden="true"
-      />
-    </div>
-  )
+  const cameraScreen = showVideo || scanState === 'error' && message.includes('camera')
+  return <>
+    <h1>{aiMode ? 'Identify with AI' : cameraScreen ? 'Scan with camera' : 'Identify return'}</h1>
+    <p className="touch-subtitle">{aiMode ? 'Find an item using a product photo.' : cameraScreen ? 'Hold the code inside the guide. It will be read automatically.' : 'Scan a code or identify an item with AI to get started.'}</p>
+    {aiMode ? <AiIdentify onBack={() => setAiMode(false)} onDetected={onDetected} /> : cameraScreen ? <div className="touch-camera-grid">
+      <div className="touch-camera-preview" style={{backgroundImage: `linear-gradient(#182e2755, #182e2755), url(${preview})`}}>
+        {showVideo && <video ref={videoRef} autoPlay playsInline muted aria-label="Live camera preview" />}
+        <span className="preview-caption">▣ {showVideo ? 'Station camera' : 'Illustrative camera preview'}</span><span className="touch-scan-guide"><i /></span><span className="scan-looking" role="status">⌗ {scanState === 'error' ? 'Camera unavailable' : 'Looking for a code…'}</span>
+      </div><aside className="camera-help"><section className="touch-card"><span className="camera-shield"><TouchIcon name="shield" /></span><h2>Allow camera access</h2><p>{message || 'The first time, choose Allow in your browser’s camera prompt.'}</p><small>Camera access requires localhost or HTTPS.</small></section><button className="touch-secondary" onClick={stopCamera}>Cancel scan</button></aside>
+    </div> : <section className="touch-scan-card">
+      <div className="touch-barcode"><img src={barcodeScanner} alt="Barcode and QR code" /><span>Barcodes &amp; QR codes</span></div><div className="touch-scan-actions"><h2>Choose how to identify</h2><button className="touch-primary" onClick={startCamera}><TouchIcon name="camera" /> Scan with camera</button><button className="touch-secondary" onClick={() => setAiMode(true)}><TouchIcon name="sparkles" /> Identify with AI</button><button className="touch-secondary" onClick={() => fileInputRef.current?.click()} disabled={scanState === 'reading'}><TouchIcon name="photo" /> {scanState === 'reading' ? 'Reading photo…' : 'Scan from photo'}</button><p role="status">{message || (lastCode ? `Read ${lastCode.text}` : 'Scan a barcode or QR code, or use AI to identify the item.')}</p></div>
+    </section>}
+    <input ref={fileInputRef} className="sr-only" type="file" accept="image/*" onChange={scanPhoto} tabIndex={-1} aria-label="Choose barcode photo" />
+  </>
 }
 
 export default BarcodeScanner

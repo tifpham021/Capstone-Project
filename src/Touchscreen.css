@@ -1,0 +1,137 @@
+:root { --ink:#1b302f; --line:#d8e0de; --green:#176c5b; --muted:#647775; }
+html { scrollbar-gutter:auto; background:#f3f6f5; }
+.touchscreen { min-height:100dvh; display:flex; flex-direction:column; background:#f3f6f5; color:var(--ink); font-size:14px; }
+.touchscreen h1 { margin:0; font-size:26px; line-height:1.2; letter-spacing:-.8px; }
+.touchscreen h2 { margin:0; font-size:16px; line-height:1.3; }
+.touchscreen button { cursor:pointer; }
+.touchscreen button:disabled { opacity:.55; cursor:wait; }
+.touchscreen button:focus-visible,.touchscreen input:focus-visible { outline:3px solid #75baa8; outline-offset:3px; }
+.touchscreen .topbar,.touch-login-header { height:64px; flex:none; background:white; border-bottom:1px solid var(--line); }
+.touchscreen .topbar-inner { width:100%; height:100%; padding:0 32px; display:flex; justify-content:space-between; }
+.touchscreen .brand { font-size:21px; font-weight:400; letter-spacing:-.7px; gap:10px; }
+.touch-logo { width:32px; height:32px; display:inline-flex; align-items:center; justify-content:center; background:var(--green); color:white; font-size:29px; border-radius:8px; line-height:1; }
+.touchscreen .account-tools { display:flex; margin:0; gap:0; }
+.touchscreen .profile-button { display:flex; align-items:center; gap:10px; padding:0; height:48px; background:transparent; color:var(--ink); border:0; }
+.touch-avatar { width:32px; height:32px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; background:#e5efec; font-size:12px; font-weight:700; object-fit:cover; }
+.touchscreen .profile-copy { display:grid; text-align:left; gap:2px; }
+.touchscreen .profile-copy strong { font-size:14px; color:var(--ink); }
+.touchscreen .profile-copy small { color:var(--muted); font-size:11px; }
+.touchscreen .chevron { margin-left:4px; width:12px; }
+.profile-menu { position:relative; }
+.profile-dropdown { position:absolute; right:0; top:52px; width:240px; padding:10px; z-index:30; border:1px solid var(--line); border-radius:10px; background:white; box-shadow:0 10px 30px #18332a20; }
+.profile-dropdown-header { display:grid; padding:8px; gap:4px; }
+.profile-dropdown button { width:100%; padding:13px 8px; text-align:left; background:white; color:var(--ink); border-radius:6px; }
+.profile-dropdown button:hover { background:#e5efec; }
+.touch-main { width:100%; max-width:1120px; margin:0 auto; padding:22px 32px 12px; flex:1; }
+.touch-subtitle { color:var(--muted); font-size:15px; margin:8px 0 18px; line-height:1.4; }
+.touch-primary,.touch-secondary { height:46px; min-height:44px; border-radius:8px; padding:0 18px; font-size:16px; font-weight:700; display:flex; align-items:center; justify-content:center; gap:8px; }
+.touch-primary { background:var(--green); color:white; border:1px solid var(--green); }
+.touch-secondary { background:white; color:var(--ink); border:1px solid var(--line); }
+.touch-primary:hover { background:#115748; }
+.touch-secondary:hover { background:#edf4f1; }
+.touch-footer { display:flex; justify-content:space-between; gap:12px; padding:12px 32px 10px; font-size:10px; color:var(--muted); flex:none; }
+.touch-card { background:white; border:1px solid var(--line); border-radius:9px; padding:14px; }
+.touch-row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+.touch-login-header { display:flex; align-items:center; justify-content:space-between; padding:0 32px; }
+.touch-login-header > span { color:var(--muted); font-size:12px; }
+.touch-login-grid { display:grid; grid-template-columns:1fr 1.09fr; gap:32px; padding-top:22px; }
+.touch-login-form { display:grid; gap:14px; }
+.touch-login-form label { display:grid; gap:7px; font-size:13px; }
+.touch-login-form input,.identity-input input { width:100%; height:45px; padding:0 13px; border:1px solid var(--line); border-radius:8px; background:white; color:var(--ink); font-size:16px; min-width:0; }
+.touch-password { position:relative; }
+.touch-password input { padding-right:48px; }
+.touch-password button { position:absolute; top:0; right:0; width:44px; height:45px; background:transparent; font-size:24px; color:var(--ink); }
+.touch-providers { display:flex; flex-direction:column; gap:10px; padding-top:0; }
+.touch-providers > strong { font-size:14px; margin-bottom:2px; }
+.touch-providers button { justify-content:flex-start; font-size:14px; font-weight:400; gap:12px; }
+.touch-providers b { font-size:20px; color:var(--muted); }
+.password-note { color:var(--muted); font-size:11px; margin:16px 0 0; }
+.touch-error { color:#b32f2f; font-size:12px; margin:0; }
+.touch-scan-card { display:grid; grid-template-columns:216px 1fr; gap:32px; background:white; border:1px solid var(--line); border-radius:13px; padding:28px 24px; margin-top:18px; }
+.touch-barcode { background:#edf1ef; border-radius:9px; min-height:202px; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:20px; color:var(--muted); font-size:13px; }
+.touch-barcode img { max-width:165px; max-height:70px; }
+.touch-scan-actions { display:flex; flex-direction:column; justify-content:center; gap:12px; }
+.touch-scan-actions h2 { font-size:19px; margin-bottom:2px; }
+.touch-scan-actions p { margin:0; font-size:12px; color:var(--muted); line-height:1.5; }
+.touch-camera-grid { display:grid; grid-template-columns:1.875fr 1fr; gap:20px; }
+.touch-camera-preview { height:275px; position:relative; border-radius:13px; background-size:cover; background-position:center; overflow:hidden; }
+.touch-camera-preview video { width:100%; height:100%; object-fit:cover; }
+.preview-caption,.evidence-preview > span { position:absolute; left:16px; top:12px; padding:6px 9px; border-radius:4px; color:white; background:#17352dd9; font-size:11px; }
+.touch-scan-guide { position:absolute; inset:24% 17%; background:linear-gradient(white,white) left top/30px 3px no-repeat,linear-gradient(white,white) left top/3px 30px no-repeat,linear-gradient(white,white) right top/30px 3px no-repeat,linear-gradient(white,white) right top/3px 30px no-repeat,linear-gradient(white,white) left bottom/30px 3px no-repeat,linear-gradient(white,white) left bottom/3px 30px no-repeat,linear-gradient(white,white) right bottom/30px 3px no-repeat,linear-gradient(white,white) right bottom/3px 30px no-repeat; }
+.touch-scan-guide i { position:absolute; height:2px; top:50%; left:10px; right:10px; background:#9ad9c5; }
+.scan-looking { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); white-space:nowrap; border-radius:25px; background:#17352de6; color:white; padding:7px 14px; font-size:13px; }
+.camera-help { display:flex; flex-direction:column; justify-content:space-between; gap:12px; }
+.camera-help .touch-card { border:none; padding:17px; border-radius:14px; }
+.camera-help p { color:var(--muted); line-height:1.4; margin:12px 0; font-size:13px; }
+.camera-help small { color:var(--muted); font-size:11px; }
+.camera-shield { display:block; color:var(--green); font-size:23px; margin-bottom:10px; }
+.verify-grid { display:grid; grid-template-columns:320fr 416fr; gap:20px; }
+.verification { padding-top:12px; }
+.verification .touch-subtitle { margin-bottom:10px; }
+.verify-details { padding:13px 15px; }
+.touch-pill { background:#e5f1ed; color:#08745f; font-size:10px; border-radius:20px; padding:5px 9px; font-weight:700; white-space:nowrap; }
+.verify-details label { display:block; margin:12px 0 7px; font-size:13px; }
+.identity-input { display:flex; position:relative; }
+.identity-input input { padding-right:42px; }
+.identity-input button { position:absolute; right:0; height:45px; width:44px; background:transparent; color:var(--ink); font-size:24px; }
+.weight-summary { margin-top:10px; padding:10px 12px; background:#f2f5f4; border-radius:12px; }
+.weight-summary .touch-row + .touch-row { margin-top:8px; font-size:12px; }
+.weight-summary .touch-row > span:not(.touch-pill) { color:var(--muted); }
+.weight-summary strong { font-size:13px; }
+.verify-cameras { display:grid; gap:10px; }
+.verify-camera { background:#273d36; border-radius:14px; padding:12px 13px; color:white; }
+.verify-camera .touch-pill { background:#91d6bd; color:#17352d; }
+.verify-camera strong { font-size:13px; }
+.evidence-preview { position:relative; height:59px; background-size:cover; background-position:center; border-radius:9px; margin-top:9px; }
+.evidence-preview > span { top:8px; left:9px; padding:4px 7px; font-size:10px; }
+.verify-actions { display:grid; grid-template-columns:152px 1fr; gap:10px; margin-top:10px; }
+.touch-account { padding-top:18px; }
+.account-heading .touch-subtitle { font-size:12px; margin:5px 0 0; }
+.touch-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:14px 0 12px; }
+.touch-stats .touch-card { height:60px; padding:15px; color:var(--muted); font-size:13px; }
+.touch-stats strong { font-size:25px; color:var(--ink); }
+.touch-account-grid { display:grid; grid-template-columns:1.61fr 1fr; gap:16px; }
+.recent-decisions { min-height:146px; }
+.recent-decisions h2,.account-details h2,.station-preferences h2 { font-size:14px; }
+.recent-decisions small,.account-details p,.account-details small { color:var(--muted); font-size:11px; }
+.decision-line { display:grid; grid-template-columns:1fr 60px 85px; margin-top:18px; font-size:12px; }
+.decision-line time { color:var(--muted); }
+.decision-line > span:last-child { text-align:right; }
+.open-return { width:100%; display:flex; justify-content:space-between; align-items:center; border-radius:9px; padding:13px 14px; margin-top:10px; background:#e5f1ed; color:var(--ink); text-align:left; }
+.open-return div { display:grid; gap:5px; }
+.open-return small { font-size:11px; color:var(--muted); }
+.open-return > span { font-size:11px; color:var(--green); }
+.account-details p { margin:6px 0; overflow-wrap:anywhere; }
+.station-preferences { margin-top:10px; }
+.touch-preference { min-height:38px; font-size:13px; }
+.touch-preference input { appearance:none; width:39px; height:24px; background:#dbe3df; border-radius:20px; position:relative; cursor:pointer; flex:none; }
+.touch-preference input::after { content:''; position:absolute; width:17px; height:17px; left:4px; top:3.5px; background:white; border-radius:50%; }
+.touch-preference input:checked { background:var(--green); }
+.touch-preference input:checked::after { left:19px; }
+.empty-decisions { font-size:12px; color:var(--muted); margin:24px 0; line-height:1.5; }
+.touch-result { display:flex; justify-content:space-between; align-items:center; }
+@media (min-width:1000px) { .touch-main { padding-top:28px; } .touchscreen .topbar,.touch-login-header { height:80px; } .touch-main,.touchscreen .topbar-inner,.touch-login-header { padding-left:40px; padding-right:40px; } .touchscreen h1 { font-size:32px; } .touch-scan-card { padding:36px 31px; grid-template-columns:270px 1fr; gap:40px; } .touch-barcode { min-height:252px; } .touch-camera-preview { height:344px; } .evidence-preview { height:74px; } .touchscreen .touch-primary,.touchscreen .touch-secondary { height:56px; } }
+@media (max-width:600px) { .touch-main { padding:20px 16px; } .touchscreen .topbar-inner,.touch-login-header { padding:0 16px; } .touch-login-grid,.touch-scan-card,.touch-camera-grid,.verify-grid,.touch-account-grid { grid-template-columns:1fr; gap:16px; } .touch-barcode { min-height:130px; } .touch-footer { padding:12px 16px; flex-wrap:wrap; } .touch-stats { grid-template-columns:repeat(2,1fr); } .account-heading { align-items:flex-start; } .account-heading .touch-secondary { padding:0 10px; font-size:12px; } .touchscreen .profile-copy { display:none; } .verify-actions { grid-template-columns:130px 1fr; } }
+.touchscreen { --ink:#1b302f; --line:#d8e0de; --green:#176c5b; --muted:#647775; --blue:#176c5b; background:#f3f6f5; }
+.touch-icon { width:21px; height:21px; flex:none; vertical-align:middle; }
+.touch-logo .touch-icon { width:22px; height:22px; }
+.touch-password button { display:flex; align-items:center; justify-content:center; }
+.touch-account { padding-top:14px; }
+.touch-account .touch-preference { min-height:34px; }
+.touch-account .station-preferences { padding-top:12px; padding-bottom:10px; }
+@media (min-width:601px) and (max-width:999px) and (max-height:520px) {
+  .verification { padding-top:10px; padding-bottom:6px; }
+  .verification .touch-subtitle { margin-top:6px; margin-bottom:8px; }
+  .touch-account { padding-bottom:6px; }
+  .touchscreen .touch-footer { padding-top:8px; padding-bottom:8px; }
+}
+.ai-identify { display:grid; grid-template-columns:auto 1fr; gap:16px; padding:24px; margin-top:18px; }
+.ai-identify > .touch-icon { color:var(--green); width:30px; height:30px; }
+.ai-identify-copy p { margin:10px 0; line-height:1.5; }
+.ai-identify-copy small { color:var(--muted); }
+.ai-identify-copy .touch-error { color:#b32f2f; }
+.ai-identify-actions { grid-column:1 / -1; display:flex; gap:12px; justify-content:flex-end; }
+@media (max-width:600px) { .ai-identify-actions { flex-wrap:wrap; } }
+@media (min-width:601px) and (max-width:999px) and (max-height:520px) {
+  .touch-scan-card { padding-top:20px; padding-bottom:20px; }
+}

@@ -4,6 +4,8 @@
 
 export const DEFAULT_PREFERENCES = Object.freeze({
   defaultLookupMode: 'barcode',
+  scanSound: true,
+  openCameraOnStart: false,
   autoDetect: true,
   queueNotifications: true,
 })

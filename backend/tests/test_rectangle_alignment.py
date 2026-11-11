@@ -12,7 +12,6 @@ import torch.nn.functional as F
 from backend.algorithms import Features, letterbox
 from backend.alignment import RectangleError, rectify_rectangle
 from backend.config import Settings
-from backend.foreground import Foreground, crop_foreground
 from backend.main import create_app
 from backend.service import VerificationService
 from fastapi.testclient import TestClient
@@ -41,13 +40,6 @@ class SpatialModels:
         raise AssertionError("Default rectangle alignment must not load ALIKED/LightGlue")
 
 
-class SyntheticSegmenter:
-    def prepare(self, image):
-        # Synthetic fixture only; real API still uses U2Netp.
-        mask = (np.asarray(image).min(-1) < 240).astype(np.uint8) * 255
-        return crop_foreground(image, mask)
-
-
 def encode(image):
     stream = io.BytesIO()
     image.save(stream, "PNG")
@@ -67,7 +59,7 @@ def patterned_object():
 @pytest.fixture
 def rectangle_api(tmp_path):
     settings = Settings(data_dir=tmp_path)
-    service = VerificationService(settings, SpatialModels(), SyntheticSegmenter())
+    service = VerificationService(settings, SpatialModels())
     with TestClient(create_app(settings, service)) as client:
         reference = patterned_object()
         response = client.post(
@@ -92,8 +84,8 @@ def test_default_corrects_quarter_turns_without_local_feature_matches(rectangle_
     assert result["geometry"]["matches"] == 0
     assert result["patchcore"]["method"] == "aligned_spatial"
     assert result["patchcore"]["anomaly_score"] < 0.02
-    ref = Image.open(io.BytesIO(client.get(result["diagnostic_image_urls"]["reference"]).content))
-    aligned = Image.open(io.BytesIO(client.get(result["diagnostic_image_urls"]["aligned"]).content))
+    ref = Image.open(io.BytesIO(client.get(result["normalized_reference_image_url"]).content))
+    aligned = Image.open(io.BytesIO(client.get(result["normalized_image_url"]).content))
     assert aligned.size == ref.size
     assert np.abs(np.asarray(aligned).astype(float) - np.asarray(ref)).mean() < 3
 
@@ -140,29 +132,17 @@ def test_degenerate_foreground_does_not_produce_transform():
             rectify_rectangle(image, mask)
 
 
-def test_failed_rectangle_does_not_expose_unaligned_image_as_aligned(rectangle_api):
-    service, client, reference = rectangle_api
-    # Cache valid reference first.
-    client.post(
-        "/v1/verify", files={"file": ("q.png", encode(reference), "image/png")}
-    ).raise_for_status()
-
-    def invalid(image):
-        mask = np.eye(image.height, image.width, dtype=np.uint8)
-        return Foreground(image, mask, float(mask.mean()))
-
-    service.segmenter.prepare = invalid
-    # Keep feature mask usable to reach rectangle rejection in this synthetic fixture.
-    original = service.models.features
-
-    def features(image, valid_mask=None):
-        return original(image)
-
-    service.models.features = features
+def test_failed_rectangle_returns_original_capture_and_inconclusive_result(rectangle_api, monkeypatch):
+    _, client, reference = rectangle_api
+    # Unusable segmentation must never produce a successful rectangle fit.
+    monkeypatch.setattr("backend.service.foreground", lambda image: (
+        np.asarray(image), np.ones((image.height, image.width), np.uint8), False))
     response = client.post("/v1/verify", files={"file": ("q.png", encode(reference), "image/png")})
     assert response.status_code == 200, response.text
     result = response.json()
     assert result["decision"] == "inconclusive"
     assert result["geometry"]["alignment_quality"] == "failed"
-    assert "aligned" not in result["diagnostic_image_urls"]
-    assert client.get(f"/v1/results/{result['request_id']}/aligned.png").status_code == 404
+    assert result["normalization_alignment"] == "orientation_only"
+    assert result["discrepancy_image_url"] is None
+    capture = Image.open(io.BytesIO(client.get(result["capture_image_url"]).content))
+    np.testing.assert_array_equal(np.asarray(capture), np.asarray(reference))

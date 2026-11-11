@@ -18,10 +18,9 @@ from backend.algorithms import (
     sift_match,
 )
 from backend.config import Settings
-from backend.foreground import Foreground
 from backend.main import create_app
 from backend.schemas import Thresholds
-from backend.service import VerificationService, decode_image, evaluate, render_discrepancies
+from backend.service import VerificationService, decode_image, evaluate
 from fastapi.testclient import TestClient
 from PIL import Image
 from pydantic import ValidationError
@@ -31,11 +30,6 @@ def png(color="orange", size=(160, 160)):
     output = io.BytesIO()
     Image.new("RGB", size, color).save(output, "PNG")
     return output.getvalue()
-
-
-class FakeSegmenter:
-    def prepare(self, image):
-        return Foreground(image, np.ones((image.height, image.width), np.uint8), 1.0)
 
 
 class FakeModels:
@@ -52,10 +46,10 @@ class FakeModels:
         vector = F.normalize(torch.tensor([*mean, 1.0]), dim=0)
         return Features(vector, vector.repeat(1024, 1), torch.ones(1024, dtype=torch.bool))
 
-    def local_features(self, image, valid_mask=None):
+    def local_features(self, image):
         return image
 
-    def match(self, ref, query, ref_size, *masks):
+    def match(self, ref, query, ref_size):
         matrix = np.diag([ref.width / query.width, ref.height / query.height, 1.0])
         return LocalMatch("ALIKED+LightGlue", 100, 90, 0.9, 0.8, 0.95, matrix)
 
@@ -63,7 +57,7 @@ class FakeModels:
 @pytest.fixture
 def configured(tmp_path):
     settings = Settings(data_dir=tmp_path, alignment_method="features")
-    service = VerificationService(settings, models=FakeModels(), segmenter=FakeSegmenter())
+    service = VerificationService(settings, models=FakeModels())
     with TestClient(create_app(settings, service=service)) as client:
         yield settings, service, client
 
@@ -110,15 +104,17 @@ def test_enrollment_and_roundtrip_result(configured):
     assert result["patchcore"]["anomaly_score"] < 1e-5
     assert not result["discrepancy_regions"]
     assert result["latency_ms"]["total"] > 0
-    for url in [
-        result["discrepancy_image_url"],
-        result["heatmap_image_url"],
-        *result["diagnostic_image_urls"].values(),
-    ]:
-        image = client.get(url)
+    for key in ("capture_image_url", "normalized_reference_image_url", "normalized_image_url"):
+        image = client.get(result[key])
         assert image.status_code == 200
         assert image.headers["content-type"] == "image/png"
         Image.open(io.BytesIO(image.content)).verify()
+    assert result["heatmap_image_url"] is None
+    assert result["region_coordinate_system"] == "normalized_448x448"
+    capture = Image.open(io.BytesIO(client.get(result["capture_image_url"]).content))
+    original = Image.open(io.BytesIO(png()))
+    assert capture.size == original.size
+    assert np.array_equal(np.asarray(capture), np.asarray(original))
     assert client.get(f"/v1/results/{result['request_id']}").json() == result
 
 
@@ -132,7 +128,7 @@ def test_duplicate_product_and_barcode(configured):
 def test_catalog_persists_across_restart(configured):
     settings, _, client = configured
     assert enroll(client).status_code == 201
-    restarted = VerificationService(settings, models=FakeModels(), segmenter=FakeSegmenter())
+    restarted = VerificationService(settings, models=FakeModels())
     assert restarted.products()[0]["id"] == "orange-product"
 
 
@@ -197,7 +193,7 @@ def test_limits_and_product_id_safety(configured):
     )
     limited = replace(settings, max_upload_bytes=100)
     with TestClient(
-        create_app(limited, service=VerificationService(limited, FakeModels(), FakeSegmenter()))
+        create_app(limited, service=VerificationService(limited, FakeModels()))
     ) as small:
         assert verify(small).status_code == 413
     with pytest.raises(Exception, match="pixel limit"):
@@ -293,7 +289,6 @@ def test_failed_alignment_is_not_an_authenticity_decision(configured):
     assert response["decision"] == "inconclusive"
     assert not response["geometry"]["alignment_valid"]
     assert response["patchcore"]["method"] == "unaligned_nearest_neighbor"
-    assert "aligned" not in response["diagnostic_image_urls"]
 
 
 def test_auto_fallback_and_forced_aliked_error(configured, monkeypatch):
@@ -305,11 +300,10 @@ def test_auto_fallback_and_forced_aliked_error(configured, monkeypatch):
 
     service.models.local_features = fail
     monkeypatch.setattr(
-        "backend.service.sift_match",
-        lambda *_args: LocalMatch("SIFT+MAGSAC++", 0, 0, 0, 0, 0, None),
+        "backend.service.sift_match", lambda *_args: LocalMatch("SIFT+RANSAC", 0, 0, 0, 0, 0, None)
     )
     result = verify(client).json()
-    assert result["geometry"]["backend"] == "SIFT+MAGSAC++"
+    assert result["geometry"]["backend"] == "SIFT+RANSAC"
     assert any("fallback" in warning for warning in result["warnings"])
     assert verify(client, local_backend="aliked").status_code == 503
 
@@ -337,13 +331,6 @@ def test_patchcore_distances_and_real_visualization():
     boxed, valid = letterbox(image)
     assert valid.sum() == 448 * 448  # White products must not disappear.
     assert boxed.size == (448, 448)
-    _, _, regions = render_discrepancies(image, image, None, np.zeros((32, 32)), 0.24)
-    assert regions == []
-    heat = np.zeros((32, 32), np.float32)
-    heat[8:16, 8:16] = 0.8
-    _, _, regions = render_discrepancies(image, image, None, heat, 0.24)
-    assert len(regions) == 1
-    assert regions[0]["width"] > 0
 
 
 def test_geometry_and_degenerate_alignment():

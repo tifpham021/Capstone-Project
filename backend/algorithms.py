@@ -75,107 +75,44 @@ class LocalMatch:
     coverage: float
     score: float
     homography: np.ndarray | None
-    query_coverage: float = 0.0
-    median_reprojection_error: float | None = None
-    rejection_reason: str | None = None
 
 
-def foreground_coverage(points, size, mask=None):
-    """Inlier hull coverage relative to the object, rather than the whole photograph."""
-    if len(points) < 3:
-        return 0.0
-    hull = cv2.convexHull(np.float32(points))
-    if mask is None:
-        return float(cv2.contourArea(hull)) / (size[0] * size[1])
-    support = np.zeros(mask.shape, np.uint8)
-    cv2.fillConvexPoly(support, np.rint(hull).astype(np.int32), 1)
-    return float(np.count_nonzero(support & mask)) / max(1, np.count_nonzero(mask))
-
-
-def geometric_match(
-    ref_points,
-    query_points,
-    ref_size,
-    backend: str,
-    ref_mask=None,
-    query_mask=None,
-    query_size=None,
-) -> LocalMatch:
-    ref_points, query_points = np.float32(ref_points), np.float32(query_points)
+def geometric_match(ref_points, query_points, ref_size, backend: str) -> LocalMatch:
     count = len(ref_points)
     if count < 4:
-        return LocalMatch(backend, count, 0, 0, 0, 0, None, rejection_reason="Too few matches")
-    query_size = query_size or ref_size
-    matrix, inlier_mask = cv2.findHomography(
-        query_points,
-        ref_points,
-        cv2.USAC_MAGSAC,
-        max(2.0, max(ref_size) * 4 / 1024),
-        maxIters=10000,
-        confidence=0.999,
-    )
+        return LocalMatch(backend, count, 0, 0, 0, 0, None)
+    matrix, inlier_mask = cv2.findHomography(query_points, ref_points, cv2.RANSAC, 4.0)
     valid = np.zeros(count, bool) if inlier_mask is None else inlier_mask.ravel().astype(bool)
     inliers = int(valid.sum())
-    coverage = foreground_coverage(ref_points[valid], ref_size, ref_mask)
-    query_coverage = foreground_coverage(query_points[valid], query_size, query_mask)
+    coverage = (
+        float(cv2.contourArea(cv2.convexHull(ref_points[valid]))) / (ref_size[0] * ref_size[1])
+        if inliers >= 3
+        else 0.0
+    )
     ratio = inliers / count
     score = (
         0.50 * min(inliers / 60, 1)
         + 0.30 * float(np.clip((ratio - 0.08) / 0.52, 0, 1))
-        + 0.20 * min(min(coverage, query_coverage) / 0.30, 1)
+        + 0.20 * min(coverage / 0.15, 1)
     )
-    error, reason = None, None
-    if matrix is None or not np.isfinite(matrix).all():
-        reason = "Homography estimation failed"
-    elif inliers < 8 or ratio < 0.20:
-        reason = "Too few consistent foreground matches"
-    elif min(coverage, query_coverage) < 0.15:
-        reason = "Inliers cover too little of the foreground"
-    else:
-        try:
-            forward = cv2.perspectiveTransform(query_points[valid, None], matrix)[:, 0]
-            backward = cv2.perspectiveTransform(ref_points[valid, None], np.linalg.inv(matrix))[
-                :, 0
-            ]
-            errors = 512 * (
-                np.linalg.norm(forward - ref_points[valid], axis=1) / max(ref_size)
-                + np.linalg.norm(backward - query_points[valid], axis=1) / max(query_size)
-            )
-            error = float(np.median(errors))
-            if not np.isfinite(errors).all() or error > 4 or np.quantile(errors, 0.9) > 8:
-                reason = "Symmetric reprojection error is too high"
-        except np.linalg.LinAlgError:
-            reason = "Homography is singular"
-    if reason:
+    if matrix is None or not np.isfinite(matrix).all() or inliers < 8 or coverage < 0.03:
         matrix = None
-    return LocalMatch(
-        backend, count, inliers, ratio, coverage, score, matrix, query_coverage, error, reason
-    )
+    return LocalMatch(backend, count, inliers, ratio, coverage, score, matrix)
 
 
-def sift_match(
-    reference: Image.Image, query: Image.Image, ref_mask=None, query_mask=None
-) -> LocalMatch:
+def sift_match(reference: Image.Image, query: Image.Image) -> LocalMatch:
     sift = cv2.SIFT_create(nfeatures=2500)
-    kp0, des0 = sift.detectAndCompute(
-        cv2.cvtColor(np.asarray(reference), cv2.COLOR_RGB2GRAY),
-        None if ref_mask is None else ref_mask * 255,
-    )
-    kp1, des1 = sift.detectAndCompute(
-        cv2.cvtColor(np.asarray(query), cv2.COLOR_RGB2GRAY),
-        None if query_mask is None else query_mask * 255,
-    )
+    kp0, des0 = sift.detectAndCompute(cv2.cvtColor(np.asarray(reference), cv2.COLOR_RGB2GRAY), None)
+    kp1, des1 = sift.detectAndCompute(cv2.cvtColor(np.asarray(query), cv2.COLOR_RGB2GRAY), None)
     if des0 is None or des1 is None:
-        return LocalMatch("SIFT+MAGSAC++", 0, 0, 0, 0, 0, None)
+        return LocalMatch("SIFT+RANSAC", 0, 0, 0, 0, 0, None)
     pairs = cv2.BFMatcher(cv2.NORM_L2).knnMatch(des0, des1, k=2)
     good = [
         pair[0] for pair in pairs if len(pair) == 2 and pair[0].distance < 0.75 * pair[1].distance
     ]
     pts0 = np.float32([kp0[m.queryIdx].pt for m in good]).reshape(-1, 2)
     pts1 = np.float32([kp1[m.trainIdx].pt for m in good]).reshape(-1, 2)
-    return geometric_match(
-        pts0, pts1, reference.size, "SIFT+MAGSAC++", ref_mask, query_mask, query.size
-    )
+    return geometric_match(pts0, pts1, reference.size, "SIFT+RANSAC")
 
 
 def align_query(image: Image.Image, matrix: np.ndarray | None, ref_size):
@@ -201,26 +138,6 @@ def align_query(image: Image.Image, matrix: np.ndarray | None, ref_size):
         borderValue=(255, 255, 255),
     )
     return Image.fromarray(warped), valid, True
-
-
-def align_foreground(image, matrix, reference, query_mask, ref_mask):
-    """Validate visibility and keep silhouette differences separate from shared pixels."""
-    aligned, support, valid = align_query(image, matrix, reference.size)
-    if not valid:
-        return image, query_mask, False, None, None
-    warped_mask = (
-        cv2.warpPerspective(query_mask, matrix, reference.size, flags=cv2.INTER_NEAREST) > 0
-    )
-    ref_mask = ref_mask > 0
-    common = warped_mask & ref_mask
-    union = warped_mask | ref_mask
-    overlap = int(common.sum())
-    iou = overlap / max(1, int(union.sum()))
-    visible = int((ref_mask & (support > 0)).sum()) / max(1, int(ref_mask.sum()))
-    if visible < 0.70 or overlap / max(1, min(int(ref_mask.sum()), int(warped_mask.sum()))) < 0.50:
-        return image, query_mask, False, iou, None
-    differences = (warped_mask ^ ref_mask) & (support > 0)
-    return aligned, common.astype(np.uint8), True, iou, differences.astype(np.uint8)
 
 
 @torch.inference_mode()
@@ -324,50 +241,18 @@ class Models:
             raise
 
     @torch.inference_mode()
-    def local_features(self, image: Image.Image, valid_mask=None) -> Any:
+    def local_features(self, image: Image.Image) -> Any:
         self._load_local()
         tensor = torch.from_numpy(np.asarray(image).copy()).permute(2, 0, 1).float() / 255
-        features = self.extractor.extract(tensor, resize=1024)
-        if valid_mask is not None:
-            points = features["keypoints"][0].cpu().numpy()
-            # Descriptor neighborhoods near the cutout edge include synthetic background.
-            interior = cv2.erode(valid_mask, np.ones((5, 5), np.uint8))
-            x = np.clip(np.rint(points[:, 0]).astype(int), 0, image.width - 1)
-            y = np.clip(np.rint(points[:, 1]).astype(int), 0, image.height - 1)
-            keep = torch.from_numpy(interior[y, x] > 0)
-            for key in ("keypoints", "descriptors", "keypoint_scores"):
-                if key in features:
-                    features[key] = features[key][:, keep]
-        return features
+        return self.extractor.extract(tensor, resize=1024)
 
     @torch.inference_mode()
-    def match(
-        self,
-        ref_features,
-        query_features,
-        ref_size,
-        ref_mask=None,
-        query_mask=None,
-        query_size=None,
-    ):
+    def match(self, ref_features, query_features, ref_size):
         from lightglue.utils import rbd
 
-        if min(ref_features["keypoints"].shape[1], query_features["keypoints"].shape[1]) < 4:
-            return LocalMatch(
-                "ALIKED+LightGlue",
-                0,
-                0,
-                0,
-                0,
-                0,
-                None,
-                rejection_reason="Too few foreground keypoints",
-            )
         matched = rbd(self.matcher({"image0": ref_features, "image1": query_features}))
         ref, query = rbd(ref_features), rbd(query_features)
         pairs = matched["matches"].cpu().numpy()
         pts0 = ref["keypoints"][pairs[:, 0]].cpu().numpy()
         pts1 = query["keypoints"][pairs[:, 1]].cpu().numpy()
-        return geometric_match(
-            pts0, pts1, ref_size, "ALIKED+LightGlue", ref_mask, query_mask, query_size
-        )
+        return geometric_match(pts0, pts1, ref_size, "ALIKED+LightGlue")

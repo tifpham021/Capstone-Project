@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import logoPlate from './assets/figma/2b7d2.svg'
 import logoMark from './assets/figma/733b6.svg'
 import notificationBubble from './assets/figma/894b8.svg'
@@ -113,6 +113,11 @@ function Workstation({ session, onSignOut }) {
   const { user } = session
   const [screen, setScreen] = useState('identify')
   const [returnCase, setReturnCase] = useState(null)
+  const [caseScans, setCaseScans] = useState({})
+  const caseId = returnCase?.id
+  const updateScan = useCallback((scan) => {
+    setCaseScans((previous) => ({ ...previous, [caseId]: scan }))
+  }, [caseId])
   const [preferences, setPreferences] = useState(() => loadPreferences(user.email))
   const [history, setHistory] = useState(() => loadDecisionHistory(user.email))
   const [mode, setMode] = useState(preferences.defaultLookupMode)
@@ -503,12 +508,15 @@ function Workstation({ session, onSignOut }) {
       ) : screen === 'inspection' ? (
         <ItemInspection
           returnCase={returnCase}
+          scan={caseScans[caseId]}
+          onScanChange={updateScan}
           onBack={() => openStep('identify')}
           onContinue={continueToReview}
         />
       ) : (
         <ReviewDecision
           returnCase={returnCase}
+          scan={caseScans[caseId]}
           onIdentify={() => openStep('identify')}
           onBack={() => openStep('inspection')}
           onSubmitDecision={completeReturn}

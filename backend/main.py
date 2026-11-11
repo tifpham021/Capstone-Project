@@ -1,4 +1,6 @@
 import hmac
+import os
+from contextlib import asynccontextmanager
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, File, Form, UploadFile
@@ -10,7 +12,7 @@ from starlette.exceptions import HTTPException
 
 from backend.config import Settings
 from backend.schemas import BatchResponse, ProductSummary, VerificationResponse
-from backend.service import IMAGE_ARTIFACTS, ServiceError, VerificationService
+from backend.service import ServiceError, VerificationService
 
 IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
 LocalBackend = Literal["auto", "aliked", "sift"]
@@ -55,10 +57,26 @@ async def read_upload(file: UploadFile, settings: Settings) -> bytes:
 
 def create_app(settings: Settings | None = None, service=None) -> FastAPI:
     settings = settings or Settings.from_env()
+    @asynccontextmanager
+    async def lifespan(app):
+        monitor = None
+        if os.getenv("RETURNSCAN_CAMERAS_ENABLED", "0") == "1":
+            from backend.cameras import CameraMonitor
+
+            monitor = CameraMonitor(app.state.verifier)
+            app.state.camera_monitor = monitor
+            monitor.start()
+        try:
+            yield
+        finally:
+            if monitor is not None:
+                await run_in_threadpool(monitor.stop)
+
     app = FastAPI(
+        lifespan=lifespan,
         title="ReturnScan CV Backend",
-        version="1.2.0",
-        description="DINOv2 retrieval, foreground rectangle alignment and PatchCore-style discrepancies. Feature alignment is optional. Scores are not calibrated authenticity probabilities.",
+        version="1.0.0",
+        description="DINOv2 retrieval, PatchCore-style discrepancies and ALIKED/LightGlue geometry. Scores are not calibrated authenticity probabilities.",
     )
     app.state.verifier = service if service is not None else VerificationService(settings)
     app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_request_bytes)
@@ -93,9 +111,27 @@ def create_app(settings: Settings | None = None, service=None) -> FastAPI:
             "status": "ok",
             "models_loaded": app.state.verifier.loaded,
             "device": str(app.state.verifier.models.device),
-            "alignment_method": settings.alignment_method,
             "authentication_enabled": bool(settings.api_key),
         }
+
+    @app.get("/v1/cameras/status", dependencies=protected)
+    def camera_status():
+        monitor = getattr(app.state, "camera_monitor", None)
+        return monitor.snapshot() if monitor else {"enabled": False, "status": "disabled"}
+
+    @app.post("/v1/cameras/scan", status_code=202, dependencies=protected)
+    def scan_cameras():
+        monitor = getattr(app.state, "camera_monitor", None)
+        if monitor is None:
+            raise ServiceError("Camera mode is disabled. Enable RETURNSCAN_CAMERAS_ENABLED.", 503)
+        return monitor.request_scan()
+
+    @app.get("/v1/cameras/scans/{scan_id}", dependencies=protected)
+    def camera_scan_result(scan_id: str):
+        monitor = getattr(app.state, "camera_monitor", None)
+        if monitor is None:
+            raise ServiceError("Camera mode is disabled", 503)
+        return monitor.scan_status(scan_id)
 
     @app.get("/v1/products", dependencies=protected)
     @app.get("/v1/catalog", dependencies=protected, include_in_schema=False)
@@ -132,14 +168,32 @@ def create_app(settings: Settings | None = None, service=None) -> FastAPI:
             for file in references:
                 await file.close()
 
+    @app.put("/v1/products/{product_id}/references", response_model=ProductSummary, dependencies=protected)
+    async def replace_references(
+        product_id: str,
+        references: Annotated[list[UploadFile], File(description="1-8 replacement reference photos")],
+        name: Annotated[str | None, Form(max_length=200)] = None,
+    ):
+        try:
+            if not 1 <= len(references) <= settings.max_references:
+                raise ServiceError(f"Supply 1-{settings.max_references} genuine references")
+            if name is not None and not name.strip():
+                raise ServiceError("Product name cannot be blank")
+            images = [await read_upload(file, settings) for file in references]
+            return await run_in_threadpool(
+                app.state.verifier.replace_references, product_id, images,
+                name.strip() if name is not None else None,
+            )
+        finally:
+            for file in references:
+                await file.close()
+
     @app.post("/v1/verify", response_model=VerificationResponse, dependencies=protected)
     async def verify(
         file: Annotated[UploadFile, File(description="One JPEG, PNG or WebP photo")],
         expected_product_id: Annotated[str | None, Form(max_length=64)] = None,
         barcode: Annotated[str | None, Form(max_length=128)] = None,
-        local_backend: Annotated[
-            LocalBackend, Form(description="Only used with RETURNSCAN_ALIGNMENT_METHOD=features")
-        ] = "auto",
+        local_backend: Annotated[LocalBackend, Form()] = "auto",
     ):
         data = await read_upload(file, settings)
         return await run_in_threadpool(
@@ -157,9 +211,7 @@ def create_app(settings: Settings | None = None, service=None) -> FastAPI:
         ],
         expected_product_id: Annotated[str | None, Form(max_length=64)] = None,
         barcode: Annotated[str | None, Form(max_length=128)] = None,
-        local_backend: Annotated[
-            LocalBackend, Form(description="Only used with RETURNSCAN_ALIGNMENT_METHOD=features")
-        ] = "auto",
+        local_backend: Annotated[LocalBackend, Form()] = "auto",
     ):
         try:
             if not 1 <= len(files) <= settings.max_batch_images:
@@ -203,7 +255,7 @@ def create_app(settings: Settings | None = None, service=None) -> FastAPI:
 
     @app.get("/v1/results/{request_id}/{filename}", dependencies=protected)
     def result_image(request_id: str, filename: str):
-        if filename not in IMAGE_ARTIFACTS:
+        if filename not in {"capture.png", "reference.png", "normalized.png", "discrepancy.png", "heatmap.png"}:
             raise ServiceError("Image not found", 404)
         return FileResponse(
             app.state.verifier.artifact(request_id, filename),

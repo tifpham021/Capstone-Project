@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import shippedReference from './assets/figma/inspection/4036d.png'
-import returnedItem from './assets/figma/inspection/97c93.png'
+import ScanResults from './ScanResults.jsx'
 import completeCircle from './assets/figma/inspection/b6992.svg'
 import completeCheck from './assets/figma/inspection/c8145.svg'
 import activeCircle from './assets/figma/inspection/6279e.svg'
@@ -33,12 +32,6 @@ const decisions = [
   },
 ]
 
-const signals = [
-  ['Weight: 1.61 kg / 1.62 kg', 'Match'],
-  ['Product geometry', 'Match'],
-  ['Visual angle', 'Review'],
-  ['Serial markings', 'Not captured'],
-]
 
 function ReviewAsset({ className = '', children }) {
   return <span className={`review-asset ${className}`}>{children}</span>
@@ -69,7 +62,7 @@ function ReviewWorkflow({ onIdentify, onInspection }) {
       />
       <CompletedStep
         title="Inspect item"
-        detail="Evidence captured and analyzed"
+        detail="Review camera scan results"
         onClick={onInspection}
         label="Back to item inspection"
       />
@@ -93,7 +86,7 @@ function formatActivityTime(occurredAt) {
   }).format(new Date(occurredAt))
 }
 
-function ReviewDecision({ returnCase, onIdentify, onBack, onSubmitDecision, reviewerName }) {
+function ReviewDecision({ scan, returnCase, onIdentify, onBack, onSubmitDecision, reviewerName }) {
   const [decision, setDecision] = useState(returnCase.decision?.type || 'secondary')
   const [reason, setReason] = useState(returnCase.decision?.reason || 'Missing serial / identity evidence')
   const [note, setNote] = useState(returnCase.decision?.note || '')
@@ -136,20 +129,20 @@ function ReviewDecision({ returnCase, onIdentify, onBack, onSubmitDecision, revi
               </ReviewAsset>
               <div>
                 <span>System recommendation</span>
-                <h2 id="recommendation-title">Likely authentic - one check remains</h2>
-                <p>Weight and geometry align. Serial markings were not captured, so human judgment remains required.</p>
+                <h2 id="recommendation-title">Review the camera evidence</h2>
+                <p>Scores and marked differences are shown separately for each camera. A reviewer must decide the outcome.</p>
               </div>
               <div className="confidence-score">
-                <strong>86%</strong>
-                <span>Match confidence</span>
-                <i><b /></i>
+                <strong>{scan?.results ? `${scan.results.filter((view) => view.result).length} views` : 'No scan'}</strong>
+                <span>Camera results</span>
+
               </div>
             </section>
 
             <section className="review-evidence-card" aria-labelledby="evidence-title">
               <div className="review-card-heading">
                 <h2 id="evidence-title">Evidence package</h2>
-                <span><i />Saved at 10:42</span>
+                <span>{scan?.captured_at ? new Date(scan.captured_at * 1000).toLocaleString() : 'No capture yet'}</span>
               </div>
 
               <dl className="evidence-metadata">
@@ -160,35 +153,14 @@ function ReviewDecision({ returnCase, onIdentify, onBack, onSubmitDecision, revi
                 <div><dt>Customer</dt><dd>{returnCase.customerName}</dd></div>
               </dl>
 
-              <div className="evidence-review-grid">
-                <figure>
-                  <img src={shippedReference} alt="Verified shipped cordless drill reference" />
-                  <figcaption><i />Shipped reference</figcaption>
-                </figure>
-                <figure>
-                  <img src={returnedItem} alt="Live photo of the returned cordless drill" />
-                  <figcaption><i />Returned item</figcaption>
-                </figure>
-                <div className="verification-signals">
-                  <h3>Verification signals</h3>
-                  {signals.map(([label, status]) => (
-                    <div key={label}>
-                      <span className={status === 'Match' ? 'signal-check' : 'signal-alert'}>
-                        {status === 'Match' ? '✓' : '!'}
-                      </span>
-                      <span>{label}</span>
-                      <strong>{status}</strong>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <ScanResults scan={scan} />
 
               <div className="review-attention">
                 <ReviewAsset>
                   <img src={warningCircle} alt="" />
                   <img src={warningMark} alt="" />
                 </ReviewAsset>
-                <div><strong>Reviewer attention</strong><span>Capture the battery-bay serial plate or document why the available evidence is sufficient.</span></div>
+                <div><strong>Reviewer attention</strong><span>Inspect alignment, marked differences, and any warnings before recording a decision.</span></div>
                 <button type="button" onClick={onBack}>View inspection</button>
               </div>
             </section>

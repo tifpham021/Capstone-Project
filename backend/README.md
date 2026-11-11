@@ -6,7 +6,7 @@ backend for the CV proof of concept, **not a validated counterfeit detector**.
 
 ## Run
 
-From the repository root, use Python 3.11–3.13 (supported by the pinned rembg release):
+From the repository root, use Python 3.11+:
 
 ```bash
 python3 -m venv backend/.venv
@@ -18,13 +18,11 @@ python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --workers 1
 Open <http://127.0.0.1:8000/docs> for interactive upload forms and the exact JSON
 schemas. `/openapi.json` exposes the machine-readable contract. Startup does not
 download weights. The first verification loads the pinned DINOv2 source and
-pretrained weights, builds the reference index, and initializes foreground alignment.
-That request also downloads the small U2Netp foreground model (~4.6 MB) and is slower.
-Internet access is needed for uncached weights; subsequent requests reuse caches.
+pretrained weights, builds the reference index, and initializes local matching.
+That request is slower and needs internet access; subsequent requests reuse caches.
 
 `RETURNSCAN_DEVICE=auto` chooses CUDA, then Apple Metal/MPS, then CPU. On an M4,
-DINOv2/PatchCore uses MPS when available; foreground segmentation and OpenCV
-rectangle warps run on CPU. The default path does not load ALIKED/LightGlue.
+DINOv2/PatchCore uses MPS when available; ALIKED/LightGlue uses CPU for portability.
 To force CPU, prefix the command with `RETURNSCAN_DEVICE=cpu`.
 
 Use **one worker**: model state and JSON catalog writes are serialized within one
@@ -76,11 +74,8 @@ curl http://127.0.0.1:8000/v1/verify \
 
 Alternatively send `barcode=1234567890123`. Do not send both identity fields.
 Omit both to retrieve the closest product from the reference catalog using CV.
-Alignment defaults to **foreground rectangle normalization**. No minimum local
-feature-match count is required. Set `RETURNSCAN_ALIGNMENT_METHOD=features` and
-restart to use the previous feature-based homography path. Only that path uses
-`local_backend=auto`, `aliked` (fail if unavailable) or `sift`. This form field is
-accepted for compatibility but does not change rectangle alignment.
+Use `local_backend=auto` (default), `aliked` (fail if unavailable) or `sift`
+(explicit CPU local-feature fallback; DINOv2 is still required).
 
 The response includes:
 
@@ -90,34 +85,13 @@ The response includes:
 - `identified_product`, `compared_product`, `identity_consistent`,
   `identity_ambiguous`, and ranked candidates. Near-tied catalog matches require
   identity review instead of an arbitrary high-confidence SKU assignment.
-- `geometry`: `alignment_method`, `alignment_quality`, `alignment_valid`,
-  foreground IoU, selected corner orientation (`rotation_degrees`), zero-based
-  reference index and reference attempts. Rectangle mode reports `outline_only`:
-  validity means the foreground warp was applied, not verified feature alignment.
-  `matches`, `inliers` and feature coverage remain zero in rectangle mode.
-  `reference_corners` and `query_corners` are in each cropped foreground's pixel
-  coordinates. Their respective 3×3 transforms map into the common `canvas_size`.
-  `orientation_score` is mean spatial DINO patch cosine similarity plus 0.03 ×
-  foreground IoU; it is only used to rank corner orientations.
-  The optional feature path additionally reports MAGSAC++ match/inlier evidence
-  and median symmetric reprojection error at a 1024-pixel long edge.
-- `segmentation`: model name, query validity and foreground fractions before cropping.
-- `score_is_informational`: true for an inconclusive comparison; do not use its
-  confidence as evidence of authenticity.
-- `diagnostic_image_urls`: original photo, foreground cutout, selected reference,
-  aligned image, foreground mask and comparison mask. `reference` is the normalized
-  reference used by PatchCore; `reference-foreground` is its original cutout.
-  These use the same protected PNG route as discrepancy outputs. When alignment
-  fails, the `aligned` URL is omitted and that PNG returns 404; the unaligned
-  cutout remains available as `foreground`.
+- `geometry`: backend, matches, RANSAC inliers, coverage and alignment validity.
 - `patchcore`: anomaly and normality scores; higher anomaly means more differences.
 - `discrepancy_image_url`, `heatmap_image_url`: paths relative to this API server.
 - `discrepancy_regions`: boxes in the **448×448 aligned/letterboxed query**, not
   original camera-image coordinates or the side-by-side comparison's coordinates.
 - `latency_ms`: preprocessing, queue wait, model/index load, retrieval, geometry,
-  foreground segmentation, PatchCore, visualization and total processing time
-  (not network transfer time). Reference segmentation is included in model/index
-  load; the separate segmentation field measures the uploaded query.
+  PatchCore, visualization and total processing time (not network transfer time).
 - `reasons` and `warnings` for review.
 
 Fetch a returned image URL directly to receive `image/png`. Results and derived
@@ -163,53 +137,21 @@ does not validate the React app's OAuth session or perform refund decisions.
 
 ## How it works
 
-1. Local `rembg` + **U2Netp** (the small U²-Net model) segments each photo at
-   320×320 on CPU. BiRefNet Lite remains an optional higher-resolution alternative.
-   Threshold the mask, crop with a small margin, and replace background with white.
-   Keep all foreground components so detached pieces are not deliberately discarded.
-   Cache reference cutouts, masks and normalized DINO brightness variants.
-   References rebuild after restart.
-2. Frozen `dinov2_vits14` features retrieve the closest catalog product from native
-   cutouts and rank its reference views. Try the closest usable reference first.
-3. **Rectangle alignment is the default.** Fit a convex four-corner outline to
-   the foreground, or use an enclosing minimum-area rectangle when necessary.
-   Include detached foreground pieces in the fitted hull. Normalize the reference
-   with OpenCV `getPerspectiveTransform` / `warpPerspective`, using a canvas up to
-   512 pixels whose aspect follows the reference rectangle, with padding. Normalize
-   the query into the same canvas. Test all four corner orientations and select
-   the best spatial DINO patch similarity with a small mask-overlap term. Reference
-   selection and orientation search are alignment heuristics, not authenticity votes.
-   The default path does not load or require ALIKED/LightGlue/SIFT.
-   The optional `features` mode retains the previous masked ALIKED/LightGlue +
-   MAGSAC++ alignment, with SIFT fallback and distribution/reprojection checks.
-4. Warp both image and mask. Compare spatially nearby DINOv2 patches only in the
-   shared foreground, against brightness variants of the selected reference.
-   The PatchCore-style score remains the 95th percentile of cosine distances.
-   Preserve foreground-outline differences separately: they appear in discrepancy
-   images and trigger review when `1 - foreground_iou` exceeds the product's
-   `max_foreground_difference` threshold (default 0.30). Outline differences can
-   also come from segmentation errors or viewpoint changes.
-5. Combine retrieval (15%) and patch normality (85%). Geometry is a **comparison
-   quality gate**, not an authenticity vote. The legacy `min_geometry_score`
-   catalog field is retained for compatibility but no longer controls the decision.
-   Rectangle alignment is labeled `outline_only`; internal pixel correspondence
-   is not verified. A failed warp or empty query segmentation produces `inconclusive`; any
-   unrestricted patch score is informational. An unusable reference requires
-   replacement, and model loading errors return `503` rather than fabricated scores.
-
-Rectangle normalization can change patch scores and can normalize away changes
-in overall proportions. Existing thresholds need re-evaluation after changing
-alignment methods.
-
-The scoring weights changed from v1.0; old confidence values and calibrated
-thresholds should not be compared directly. No threshold here is validated for
-production authenticity decisions. Near-tied product identities prevent a `consistent` decision.
+1. Frozen `dinov2_vits14` global features retrieve the closest catalog product.
+2. ALIKED detects/describes local points; LightGlue matches them between query
+   and references. RANSAC fits query-to-reference geometry and rejects outliers.
+3. For a usable fit, compare spatially nearby DINOv2 patches against genuine
+   reference patches (with mild brightness variants). PatchCore-style cosine
+   distances produce a 95th-percentile anomaly score and discrepancy map.
+4. Combine retrieval (15%), geometry (50%) and patch normality (35%). Identity,
+   geometry and anomaly gates also influence the decision. If alignment fails,
+   an unrestricted nearest-neighbor patch score is informational and the decision
+   is `inconclusive`. No fake or random scores are used when models fail.
 
 The heatmap uses an absolute threshold, so even a perfect reference match is not
 forced to contain red patches. Boxes indicate appearance anomalies, not a proven
-cause of damage or counterfeiting. Red regions include appearance anomalies and
-foreground-outline differences; the latter are not included in the patch anomaly
-scalar. This is a custom DINOv2-based PatchCore-style variant, not the original paper's exact backbone/scoring implementation.
+cause of damage or counterfeiting. This is a custom DINOv2-based PatchCore-style
+variant, not the original paper's exact backbone/scoring implementation.
 
 ## Configuration and safety
 
@@ -218,16 +160,7 @@ See [`.env.example`](.env.example). Export variables or use
 
 - `RETURNSCAN_DATA_DIR`: catalog, normalized references, results and default model
   cache. Defaults to `backend/.runtime`, excluded from Git.
-- `RETURNSCAN_DEVICE`: `auto`, `cpu`, `mps`, `cuda` (PyTorch models).
-- `RETURNSCAN_ALIGNMENT_METHOD`: `rectangle` (default), or `features` for the
-  previous ALIKED/LightGlue + MAGSAC++ path. Restart after changing it so reference
-  patch banks rebuild in the correct coordinate system.
-- `RETURNSCAN_SEGMENTATION_MODEL`: defaults to `u2netp` (320×320, ~4.6 MB).
-  Set `birefnet-general-lite` for the previous 1024×1024 model (~224 MB), or
-  `isnet-general-use` for another alternative. Changing it rebuilds reference masks
-  on restart and needs new validation. Segmentation runs on ONNX CPU.
-  Existing `.env` files with the old model name override the new default.
-  Weights are cached in the configured model cache under `segmentation/`.
+- `RETURNSCAN_DEVICE`: `auto`, `cpu`, `mps`, `cuda`.
 - `RETURNSCAN_API_KEY`: optional shared key for all data/image routes. Leave empty
   only for local development. Health/docs remain public.
 - `RETURNSCAN_CORS_ORIGINS`: comma-separated exact origins. Defaults to
@@ -247,10 +180,8 @@ and the upstream model-weight hosts.
 Thresholds live per product in `.runtime/catalog.json`. Change them only after
 held-out evaluation and restart the process after manual catalog changes. The
 default thresholds and weights are heuristic: a `consistent` result cannot
-establish authenticity, damage alone is not fraud, segmentation errors can affect scores,
-and rectangle normalization is only a coarse shape alignment. It can include
-visible sidewalls and cannot establish correspondence across arbitrary 3D views. Segmentation
-can omit transparent, reflective or damaged parts and requires inspection. Real products
+establish authenticity, damage alone is not fraud, backgrounds can affect scores,
+and a homography is only an approximation for a non-planar object. Real products
 need controlled capture and genuine/defective/counterfeit evaluation data.
 
 ## Tests
@@ -263,9 +194,8 @@ ruff format --check backend
 ```
 
 Unit/HTTP contract tests inject deterministic test features and do **not**
-download models. They also exercise real patch-distance math, rectangle/perspective warping, quarter-turn orientation selection,
-feature-mode MAGSAC++, masked keypoints,
-foreground coverage, upload validation, auth, CORS, persistence, partial batches and PNG generation.
+download models. They also exercise real patch-distance math, RANSAC, upload
+validation, auth, CORS, persistence, partial batches and PNG generation.
 For a real-model HTTP smoke test, start the server and run:
 
 ```bash
@@ -276,89 +206,9 @@ python -m backend.smoke_test \
 ```
 
 The smoke test enrolls a uniquely named product, verifies every query using the
-actual server, checks that all returned PNGs decode, and prints scores/latency.
+actual server, checks that both returned PNGs decode, and prints scores/latency.
 It intentionally does not assert that an uncalibrated model labels every item
-correctly. Use `--local-backend sift` to exercise the fallback. Repeat
-`--reference` to enroll several views, use `--repeat 2` for cold/warm comparisons,
-and `--output-dir backend/.runtime/smoke` to save every returned PNG and JSON.
-
-### Rectangle alignment HTTP smoke test (current default)
-
-Tested on Apple M4 with a small product reference and a separate table photo of
-an object, including 90° and 180° rotations of the query. All six HTTP requests
-applied rectangle alignment and returned decodable diagnostic/discrepancy PNGs.
-The selected orientations kept the object upright relative to the reference.
-Warm end-to-end processing took **390–418 ms**; the first request with cached
-weights took **1.48 s**. The default path never initialized ALIKED/LightGlue.
-
-This demonstrates coarse outline normalization and API behavior; it does not
-validate pixel correspondence or authenticity accuracy. Recorded stage timings
-are in [`benchmarks/rectangle-alignment.json`](benchmarks/rectangle-alignment.json).
-Source photos supplied for this test are not committed.
-
-### Small-model benchmark (previous feature-alignment version)
-
-On Apple M4, CPU execution, four threads, eight real photos (three phones, two
-bottles, a cable, a metal nut, and a circuit board), two warm runs per photo:
-
-| Model | Input | Checkpoint | Median segmentation time |
-| --- | --- | --- | --- |
-| U2Netp (default) | 320×320 | 4.6 MB | 106 ms |
-| BiRefNet General Lite | 1024×1024 | 224 MB | 3,960 ms |
-
-Times include preprocessing, model inference, thresholding and cropping. U2Netp
-was about **37× faster** on this small sample. Foreground reference masks and
-features are still cached; the uploaded query is segmented once per request.
-
-The same real-photo rotation/scale HTTP control below took **1.47 seconds warm**
-with U2Netp (~110 ms segmentation), versus 6.57 seconds previously with BiRefNet.
-Those full-pipeline numbers used the previous feature-based alignment; the
-segmentation-only comparison is independent of the new rectangle path.
-All diagnostic PNGs were fetched and decoded. This tests alignment on a transformed
-reference, not authenticity accuracy on independent photos.
-
-Visual inspection: phone and circuit-board masks broadly agree. U2Netp preserves
-more of the glass-bottle rim, but misses the cable's outer jacket and fills the
-metal nut's hole. Neither model is ground truth; keep BiRefNet available for
-products where the small model removes important parts. Mask validity only checks
-for an adequately sized foreground; it does not guarantee a correct segmentation.
-Recorded measurements are in [`benchmarks/segmentation-models.json`](benchmarks/segmentation-models.json).
-
-Reproduce on your own images, with local mask overlays and cutouts for review:
-
-```bash
-python -m backend.benchmark_segmentation \
-  --image /path/to/phone.jpg \
-  --image /path/to/another-product.jpg \
-  --repeat 3 \
-  --output-dir backend/.runtime/segmentation-comparison
-```
-
-This compares `u2netp` with `birefnet-general-lite`; `--models` accepts other
-rembg model names. The JSON includes image hashes, individual timings and mask
-agreement. Agreement between models is **not** segmentation accuracy.
-
-### Previous BiRefNet Lite smoke test
-
-On an Apple M4 laptop, using MPS for DINO and CPU for BiRefNet Lite and
-ALIKED/LightGlue, one catalog product and one cached reference:
-
-| HTTP request | Decision | Visual-match score | Processing time |
-| --- | --- | --- | --- |
-| Rotated/scaled photo, first request with cached weights | consistent | 99.25% | 16.33 s |
-| Same reference photo, warm | consistent | 100% | 7.43 s |
-| Rotated/scaled photo, warm | consistent | 99.25% | 6.57 s |
-| Same reference photo, warm | consistent | 100% | 6.64 s |
-
-The rotated query is a **synthetic 12° rotation and 0.90 scale of a real MVTec
-bottle reference photo**. This verifies alignment and HTTP/image delivery; it is
-not an independent-image authenticity benchmark. In separate real-model checks,
-a different genuine bottle photo and a damaged bottle photo were both
-inconclusive because the matched points covered too little foreground. This
-pipeline rejects weak fits; it does not solve textureless objects or arbitrary
-3D viewpoints. Foreground segmentation dominated warm latency (~4.6–5.6 s).
-First-time weight downloads are additional. Recorded stage timings are
-in [`benchmarks/alignment-smoke.json`](benchmarks/alignment-smoke.json).
+correctly. Use `--local-backend sift` to exercise the fallback.
 
 ## Upstream work
 
@@ -366,12 +216,170 @@ in [`benchmarks/alignment-smoke.json`](benchmarks/alignment-smoke.json).
 - [LightGlue](https://github.com/cvg/LightGlue), Apache-2.0, including ALIKED support.
 - [ALIKED](https://github.com/Shiaoming/ALIKED), BSD-3-Clause.
 - [PatchCore paper](https://arxiv.org/abs/2106.08265).
-- [rembg](https://github.com/danielgatis/rembg), MIT wrapper; model licenses are separate.
-- [U²-Net / U2Netp](https://github.com/xuebinqin/U-2-Net), Apache-2.0.
-- [BiRefNet](https://github.com/ZhengPeng7/BiRefNet), MIT (optional model).
-- [OpenCV USAC / MAGSAC++](https://docs.opencv.org/4.x/de/d3e/tutorial_usac.html).
 - [RANSAC paper](https://doi.org/10.1145/358669.358692).
 
 Code/weight sources are pinned where fetched through Git. Review upstream
 licenses before redistributing models. No pretrained weights, source product
 photos or user-specific paths are committed to this repository.
+
+## Automatic Raspberry Pi camera verification
+
+The backend can own both CSI cameras and run the existing verification algorithm
+when **both views stay still for two seconds**. It processes the initial settled
+scene once, then requires sustained motion (0.3 seconds) before another scan.
+Small blurred grayscale previews detect motion; the matching algorithm receives
+1280×960 JPEGs from both cameras. Captures are close in time, not hardware synchronized.
+Camera capture continues during inference; inference runs sequentially in one
+background worker, without an accumulating queue. A scene changed during processing
+is checked again after the worker is available and the views settle.
+
+Install Picamera2 using Raspberry Pi OS packages, then create a virtual environment
+that can access those system packages and install the backend requirements:
+
+```bash
+sudo apt install python3-picamera2
+python3 -m venv --system-site-packages backend/.venv
+source backend/.venv/bin/activate
+python -m pip install -r backend/requirements.txt
+RETURNSCAN_CAMERAS_ENABLED=1 RETURNSCAN_DEVICE=cpu \
+  python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --workers 1
+```
+
+Enroll genuine references first using `/v1/products`. An empty catalog or unavailable
+model weights produces explicit per-camera errors. The first scan may download
+DINOv2 weights. Camera mode defaults to SIFT local matching to reduce Pi resource
+use; DINOv2 retrieval and patch comparison still run. Close other camera applications
+before enabling this mode. Use exactly one server worker and avoid reload mode.
+
+Poll `GET /v1/cameras/status` (with `X-API-Key` if configured) for `status`, camera
+errors, and `latest.results`, containing each camera ID and its normal verification
+response or error. Successful results retain the existing persisted result/image
+URLs. The latest two-view summary stays in memory; it resets on server restart.
+Camera initialization failure is reported here while upload endpoints remain usable.
+This endpoint does not expose a live camera preview.
+
+Settings in `.env.example` control camera IDs, settling time, sampling interval,
+motion sensitivity, local backend and an optional expected product ID. The default
+motion threshold is a 12-level grayscale difference in at least 1.5% of preview
+pixels. Tune the fraction for the station's lighting and product size. Stillness
+detection does not determine whether a product is present; an empty settled scene
+also triggers a scan. Camera mode defaults to disabled.
+
+Hardware-independent camera state tests:
+
+```bash
+python3 -m unittest backend.tests.test_cameras -v
+```
+
+## Frontend button capture
+
+### Normalized comparison views
+
+New scans show the selected reference and returned item as transparent PNGs.
+GrabCut isolates a single product from its background. Leave space around the
+product and use a contrasting background; failed segmentation is reported and
+retains the original background. With valid matching geometry, the returned item
+is warped into the reference perspective and both images share a crop and scale.
+Without a valid fit, each foreground is oriented independently; the UI explicitly
+reports that perspective alignment failed. This cannot reconstruct unseen sides.
+These display transformations do not change the existing confidence calculation.
+
+Only valid **ALIKED + LightGlue** matches with successful foreground isolation
+produce a discrepancy image. A single returned-item view boxes substantial
+changed/missing edges, with a small alignment tolerance and noise filtering.
+There is no color heatmap. SIFT and failed alignment still return normalized
+views, but do not produce discrepancy boxes. Lighting, reflections and imperfect
+segmentation can affect edge differences; these boxes require visual review.
+Set `RETURNSCAN_CAMERA_LOCAL_BACKEND=auto` to attempt LightGlue with SIFT fallback,
+or `aliked` to require LightGlue. The default Pi configuration uses `sift`.
+
+Responses include `normalized_reference_image_url`, `normalized_image_url`,
+`background_removed`, and `normalization_alignment`. `discrepancy_image_url` is
+nullable and `heatmap_image_url` is null for new results. Box coordinates use the
+448×448 normalized image (`region_coordinate_system=normalized_448x448`). Older
+saved images remain accessible through their original URLs.
+
+### Black iPhone 15 references
+
+Use your actual black reference photos rather than the previously downloaded
+yellow phone photos. After restarting the updated backend, replace the enrolled
+`iphone-15` references using:
+
+```bash
+backend/.venv/bin/python -m backend.enroll_iphone15 \
+  --reference /absolute/path/to/black-phone.jpg --replace
+```
+
+Repeat `--reference` for additional views (up to eight). The helper labels the
+product **Apple iPhone 15 · Black**. Replacement uses the authenticated
+`PUT /v1/products/{product_id}/references` endpoint, writes new sanitized files,
+updates the catalog atomically, and invalidates cached reference features.
+Earlier reference files and scan results remain on disk. No photos are recolored.
+
+Run the model-free image tests and injected-model API tests with:
+
+```bash
+backend/.venv/bin/python -m unittest backend.tests.test_visualization backend.tests.test_normalized_results -v
+```
+
+The inspection page's **Scan item** button requests new pictures from both Pi
+cameras, follows a scan ID, and displays independent per-view scores, decisions,
+alignment checks and marked discrepancy images. The review page retains those
+results for the active case while the app is open. Camera results are compared
+with the enrolled catalog (or `RETURNSCAN_CAMERA_PRODUCT_ID` when configured).
+They are not compared against each other. Scan tracking is in memory (last 16
+button scans); successful verification artifacts continue to persist on disk.
+Reloading the frontend resets its case-to-scan association.
+
+Start the backend for button-only scanning:
+
+```bash
+RETURNSCAN_CAMERAS_ENABLED=1 RETURNSCAN_CAMERA_AUTO_SCAN=0 RETURNSCAN_DEVICE=cpu \
+  backend/.venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --workers 1
+```
+
+In another terminal from the repository root:
+
+```bash
+npm ci
+npm run dev -- --host 127.0.0.1
+```
+
+Open http://127.0.0.1:5173 on the Pi, open an item's inspection screen, and press
+**Scan item**. `RETURNSCAN_CAMERA_AUTO_SCAN=1` retains automatic stillness scans;
+a button request returns 409 if another verification is already processing.
+Both cameras must initialize successfully. Images are captured close in time,
+without hardware synchronization. Inconclusive results remain visibly
+inconclusive, and partial per-camera failures do not hide successful views.
+
+Vite development and preview servers proxy `/v1` to port 8000, including artifact
+images. If using `RETURNSCAN_API_KEY`, export it for **both backend and Vite**;
+the proxy adds the header server-side. Do not put it in a `VITE_*` variable.
+Production hosting needs an equivalent trusted `/v1` reverse proxy; a static
+build alone does not include Vite's proxy. A non-secret `VITE_API_BASE_URL` can
+point directly at an API with suitable CORS when no API key is required.
+
+New endpoints (protected by the configured API key):
+
+- `POST /v1/cameras/scan`: returns HTTP 202 and `{scan_id, status: "queued"}`.
+- `GET /v1/cameras/scans/{scan_id}`: returns queued/processing status, then
+  `status: "complete"`, `captured_at`, and independent `results`. Camera capture
+  failures produce `status: "error"`; individual CV errors appear per view.
+
+Run hardware-independent capture and API tests with:
+
+```bash
+backend/.venv/bin/python -m unittest backend.tests.test_cameras backend.tests.test_camera_scan -v
+```
+
+### Rectangle alignment
+
+`RETURNSCAN_ALIGNMENT_METHOD=rectangle` (default) uses the foreground mask from
+existing local preprocessing and fits the reference and query outlines to a
+shared rectangle canvas. It tries four corner orientations and chooses the best
+spatial DINO patch agreement. The remote rectangle fitter retains detached pieces
+and falls back to an enclosing rectangle when a quadrilateral would clip them.
+This is outline normalization; internal feature correspondence is not verified.
+Set `RETURNSCAN_ALIGNMENT_METHOD=features` to retain the previous ALIKED/SIFT path.
+The camera routes, capture images, normalized result fields, and local frontend
+remain compatible. No additional segmentation model or dependency is required.

@@ -9,14 +9,7 @@ class Thresholds(BaseModel):
     """POC defaults, not thresholds calibrated for a deployed product."""
 
     min_retrieval_cosine: float = Field(default=0.45, ge=-1, lt=1)
-    min_geometry_score: float = Field(
-        default=0.52,
-        ge=0,
-        le=1,
-        deprecated=True,
-        description="Legacy field; validated alignment now gates comparison",
-    )
-    max_foreground_difference: float = Field(default=0.30, ge=0, le=1)
+    min_geometry_score: float = Field(default=0.52, ge=0, le=1)
     max_patchcore_anomaly: float = Field(default=0.43, gt=0, le=2)
     min_combined_score: float = Field(default=0.66, ge=0, le=1)
     patchcore_good: float = Field(default=0.24, ge=0, le=2)
@@ -51,29 +44,9 @@ class GeometryResult(BaseModel):
     coverage: float
     score: float = Field(ge=0, le=1)
     alignment_valid: bool
-    estimator: str = "USAC_MAGSAC"
-    query_coverage: float = 0
-    median_reprojection_error: float | None = None
-    rejection_reason: str | None = None
-    foreground_iou: float | None = None
-    reference_index: int = 0
-    references_attempted: int = 0
     alignment_method: str = "features"
     alignment_quality: str = "unknown"
     rotation_degrees: int = 0
-    orientation_score: float | None = None
-    reference_corners: list[list[float]] | None = None
-    query_corners: list[list[float]] | None = None
-    reference_transform: list[list[float]] | None = None
-    query_transform: list[list[float]] | None = None
-    canvas_size: list[int] | None = None
-
-
-class SegmentationResult(BaseModel):
-    model: str
-    valid: bool
-    query_foreground_fraction: float
-    reference_foreground_fraction: float
 
 
 class PatchCoreResult(BaseModel):
@@ -95,7 +68,6 @@ class VerificationResponse(BaseModel):
     confidence: float = Field(ge=0, le=1, description="Uncalibrated visual-match score")
     confidence_percent: float = Field(ge=0, le=100)
     confidence_type: Literal["uncalibrated_visual_match"] = "uncalibrated_visual_match"
-    score_is_informational: bool = False
     decision: Literal["consistent", "suspicious", "inconclusive"]
     identified_product: ProductSummary
     compared_product: ProductSummary
@@ -104,13 +76,16 @@ class VerificationResponse(BaseModel):
     identity_ambiguous: bool = False
     candidates: list[Candidate]
     geometry: GeometryResult
-    segmentation: SegmentationResult | None = None
     patchcore: PatchCoreResult
-    discrepancy_image_url: str
-    heatmap_image_url: str
-    diagnostic_image_urls: dict[str, str] = Field(default_factory=dict)
+    discrepancy_image_url: str | None = None
+    capture_image_url: str | None = None
+    normalized_reference_image_url: str | None = None
+    normalized_image_url: str | None = None
+    background_removed: bool = False
+    normalization_alignment: Literal["matched_geometry", "orientation_only"] | None = None
+    heatmap_image_url: str | None = None
     discrepancy_regions: list[DiscrepancyRegion]
-    region_coordinate_system: Literal["aligned_letterbox_448x448"] = "aligned_letterbox_448x448"
+    region_coordinate_system: Literal["aligned_letterbox_448x448", "normalized_448x448"] = "aligned_letterbox_448x448"
     latency_ms: dict[str, float]
     reasons: list[str]
     warnings: list[str]

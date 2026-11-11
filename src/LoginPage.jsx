@@ -69,10 +69,14 @@ function LoginPage({ onSignIn, notice }) {
     runSignIn(AUTH_PROVIDER.EMAIL, () => signInWithEmail(email, password, remember))
   }
 
-  const fillDemo = () => {
+  const signInDemo = () => {
     setEmail(DEMO_CREDENTIALS.email)
     setPassword(DEMO_CREDENTIALS.password)
-    setError('')
+    runSignIn(AUTH_PROVIDER.EMAIL, () => signInWithEmail(
+      DEMO_CREDENTIALS.email,
+      DEMO_CREDENTIALS.password,
+      remember,
+    ))
   }
 
   const busy = pending !== null
@@ -203,7 +207,7 @@ function LoginPage({ onSignIn, notice }) {
               <strong>Demo account</strong>
               <small>{DEMO_CREDENTIALS.email} / {DEMO_CREDENTIALS.password}</small>
             </div>
-            <button type="button" onClick={fillDemo} disabled={busy}>Use demo account</button>
+            <button type="button" onClick={signInDemo} disabled={busy}>Use demo account</button>
           </div>
         </section>
       </main>

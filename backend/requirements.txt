@@ -9,4 +9,3 @@ Pillow>=11,<13
 opencv-python-headless>=4.11,<5
 kornia>=0.8,<1
 lightglue @ git+https://github.com/cvg/LightGlue.git@5a650c444718caffc2669dc0094cde908f42dd73
-rembg[cpu]==2.0.69

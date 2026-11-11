@@ -65,6 +65,40 @@ Load the demo orders (`ORD-8921` matches the frontend's sample return):
 python -m backend.seed
 ```
 
+### Test order: Owala water bottle (`ORD-1032`)
+
+`ORD-1032` is a real product for trying the CV check end to end: an Owala
+FreeSip insulated stainless steel bottle, 32 oz, hot pink. Its original-order
+photo is [`samples/owala-freesip-32oz-hot-pink.png`](samples/owala-freesip-32oz-hot-pink.png).
+With the API running, seed it and enroll that photo in the AI catalog:
+
+```bash
+python -m backend.seed --enroll   # --api http://host:8000 if not local
+```
+
+| Field | Value |
+| --- | --- |
+| CV `product_id` | `owala-freesip-32-hot-pink` |
+| SKU | `OWL-FS32-HPK` (placeholder, not a retailer SKU) |
+| Price | $32.99 (approximate) |
+| Expected weight | 430 g ± 15 g. **Estimate** for an empty bottle; weigh a real one and update `backend/seed.py` |
+| Serial / barcode | None |
+
+In the desktop UI, look up `ORD-1032`, start the inspection, enter the scale
+reading, and add a photo of the returned bottle. The photo is saved to the return,
+sent to `/v1/verify` and the result is attached before you can continue to review.
+
+Results from the bundled photo (rectangle alignment, CPU):
+
+| Photo checked against the bottle | Decision | Confidence |
+| --- | --- | --- |
+| The reference photo itself | `consistent` | 100% |
+| The sample drill photo | `suspicious` | 0% |
+| The reference with red and blue swapped (a **blue** bottle) | `consistent` | 99% |
+
+The last row is a known gap; see [Known limitation: colour](#known-limitation-colour).
+Real camera photos will score below 100%.
+
 | Table | Holds |
 | --- | --- |
 | `orders` | Order number, customer, order date |
@@ -102,7 +136,7 @@ curl http://127.0.0.1:8000/v1/returns -H 'Content-Type: application/json'   -d '
 curl http://127.0.0.1:8000/v1/returns/RET-XXXXXXXXXX/weight   -H 'Content-Type: application/json' -d '{"measured_weight_g": 1610}'
 ```
 
-No catalog photos are bundled. Enroll your own known-genuine reference images.
+Only the Owala test photo is bundled. Enroll your own known-genuine reference images.
 JPEG, PNG and WebP are supported (15 MiB per file, 20 megapixels, minimum 64×64).
 Images are decoded, orientation-corrected, downscaled and stored without source
 metadata. HEIC must first be converted to a supported format.
@@ -258,6 +292,17 @@ does not validate the React app's OAuth session or perform refund decisions.
 Rectangle normalization can change patch scores and can normalize away changes
 in overall proportions. Existing thresholds need re-evaluation after changing
 alignment methods.
+
+### Known limitation: colour
+
+The check does not compare colour. DINOv2 features and the patch scores respond
+mainly to shape and texture, so the same product in a different colour passes:
+the hot pink Owala reference recoloured blue scored `consistent` at 99%. A
+wrong-colour return (e.g. a cheaper colourway swapped in) is not caught. A fix
+would add a colour comparison inside the shared foreground mask (for example a
+hue/saturation histogram or mean Lab colour distance, with a per-product
+threshold) as a separate reason that triggers review. Lighting and white balance
+at the station will shift colour, so any threshold needs testing with real photos.
 
 The scoring weights changed from v1.0; old confidence values and calibrated
 thresholds should not be compared directly. No threshold here is validated for

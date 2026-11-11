@@ -17,6 +17,9 @@ class Settings:
     max_pixels: int = 20_000_000
     max_batch_images: int = 4
     max_references: int = 8
+    # Empty means SQLite at <data_dir>/returnscan.db. Any SQLAlchemy URL works,
+    # e.g. postgresql+psycopg://user:pass@host/db if the database moves later.
+    database_url: str = ""
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -28,6 +31,7 @@ class Settings:
             else None,
             dino_source=os.getenv("RETURNSCAN_DINO_SOURCE") or None,
             api_key=os.getenv("RETURNSCAN_API_KEY", ""),
+            database_url=os.getenv("RETURNSCAN_DATABASE_URL", ""),
             cors_origins=tuple(
                 filter(
                     None,
@@ -40,6 +44,10 @@ class Settings:
                 )
             ),
         )
+
+    @property
+    def resolved_database_url(self) -> str:
+        return self.database_url or f"sqlite:///{(self.data_dir / 'returnscan.db').as_posix()}"
 
     @property
     def max_request_bytes(self) -> int:

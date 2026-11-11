@@ -926,3 +926,15 @@
 @media (prefers-reduced-motion: reduce) {
   .review-page { animation: none; }
 }
+
+.review-empty {
+  height: 100%;
+  min-height: 120px;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 36px 12px 12px;
+  color: #667085;
+  font-size: 13px;
+  text-align: center;
+}

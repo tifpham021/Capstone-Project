@@ -8,11 +8,13 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import APIKeyHeader
 from starlette.exceptions import HTTPException
 
+from backend.common import read_upload
 from backend.config import Settings
+from backend.database import create_session_factory
+from backend.records import create_records_router
 from backend.schemas import BatchResponse, ProductSummary, VerificationResponse
 from backend.service import ServiceError, VerificationService
 
-IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
 LocalBackend = Literal["auto", "aliked", "sift"]
 
 
@@ -39,21 +41,7 @@ class BodyLimitMiddleware:
         await self.app(scope, limited_receive, send)
 
 
-async def read_upload(file: UploadFile, settings: Settings) -> bytes:
-    try:
-        if file.content_type not in IMAGE_MIME_TYPES:
-            raise ServiceError("Supported content types: image/jpeg, image/png, image/webp", 415)
-        data = await file.read(settings.max_upload_bytes + 1)
-        if not data:
-            raise ServiceError("Image is empty", 400)
-        if len(data) > settings.max_upload_bytes:
-            raise ServiceError("Image exceeds the upload limit", 413)
-        return data
-    finally:
-        await file.close()
-
-
-def create_app(settings: Settings | None = None, service=None) -> FastAPI:
+def create_app(settings: Settings | None = None, service=None, session_factory=None) -> FastAPI:
     settings = settings or Settings.from_env()
     app = FastAPI(
         title="ReturnScan CV Backend",
@@ -205,6 +193,12 @@ def create_app(settings: Settings | None = None, service=None) -> FastAPI:
             media_type="image/png",
             headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
         )
+
+    app.include_router(
+        create_records_router(
+            settings, session_factory or create_session_factory(settings), protected
+        )
+    )
 
     return app
 

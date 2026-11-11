@@ -42,6 +42,64 @@ process. Run from the repository root. The frontend can run separately using
 | GET | `/v1/results/{request_id}/discrepancy.png` | Reference beside aligned query, with differences highlighted |
 | GET | `/v1/results/{request_id}/heatmap.png` | Aligned query with anomaly overlay and discrepancy boxes |
 
+## Records database
+
+Orders, the original item photos and weights, and returns are stored in a
+database so every station (desktop and Raspberry Pi) sees the same data.
+
+- **Default:** SQLite, one file at `<RETURNSCAN_DATA_DIR>/returnscan.db`. Free,
+  nothing to install, created automatically on startup.
+- **Images** are saved as sanitized JPEGs under `order-images/` and
+  `return-images/` in the data directory; the tables store their paths.
+- **Moving later:** set `RETURNSCAN_DATABASE_URL` to any SQLAlchemy URL (e.g.
+  PostgreSQL). The code does not change. Back up the `.db` file and the image
+  folders together.
+- **Schema changes:** tables are created if missing, but existing tables are not
+  altered. During development, delete `returnscan.db` after changing a model.
+
+Load the demo orders (`ORD-8921` matches the frontend's sample return):
+
+```bash
+python -m backend.seed
+```
+
+| Table | Holds |
+| --- | --- |
+| `orders` | Order number, customer, order date |
+| `order_items` | Product, SKU, serial, barcode (stored; lookup not built yet), price, **expected weight**, optional weight tolerance, CV catalog `product_id` |
+| `order_images` | Original photos of the item before shipping (front/back/top/side/label) |
+| `returns` | A return at a station: order + item, status, station, reviewer |
+| `return_events` | Status history (audit trail) |
+| `weight_checks` | Scale reading vs. expected weight, difference and pass/fail |
+| `return_images` | Station camera photos of the returned item |
+| `verifications` | CV result summary linked to a return (`request_id`, confidence, decision) |
+| `decisions` | Reviewer outcome (`approve`, `secondary`, `fraud`), reason and note |
+
+Weights are in grams. Without an item tolerance, a weight passes when it is within
+2% of the expected weight or 5 g, whichever is larger.
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| POST | `/v1/orders` | Create an order with its items (JSON) |
+| GET | `/v1/orders?search=` | List or search orders by number, SKU, serial or customer |
+| GET | `/v1/orders/{order_id}` | One order with items and original image URLs |
+| POST | `/v1/orders/{order_id}/items/{item_id}/images` | Upload an original item photo (`file`, `view`) |
+| GET | `/v1/order-images/{id}` | Original photo (JPEG) |
+| POST | `/v1/returns` | Start a return for an order (`order_item_id` needed if several items) |
+| GET | `/v1/returns?status=&order_id=&reviewer_email=` | List returns |
+| GET | `/v1/returns/{id}` | Return with item, weights, photos, CV results, decision and history |
+| POST | `/v1/returns/{id}/status` | Move to the next status |
+| POST | `/v1/returns/{id}/weight` | Record a scale reading and compare it with the order |
+| POST | `/v1/returns/{id}/images` | Upload a station photo (`file`, `view`) |
+| GET | `/v1/return-images/{id}` | Station photo (JPEG) |
+| POST | `/v1/returns/{id}/verifications` | Attach a `/v1/verify` result by `request_id` |
+| POST | `/v1/returns/{id}/decision` | Record the final decision; completes the return |
+
+```bash
+curl http://127.0.0.1:8000/v1/returns -H 'Content-Type: application/json'   -d '{"order_id": "ORD-8921", "station": "Station 01"}'
+curl http://127.0.0.1:8000/v1/returns/RET-XXXXXXXXXX/weight   -H 'Content-Type: application/json' -d '{"measured_weight_g": 1610}'
+```
+
 No catalog photos are bundled. Enroll your own known-genuine reference images.
 JPEG, PNG and WebP are supported (15 MiB per file, 20 megapixels, minimum 64×64).
 Images are decoded, orientation-corrected, downscaled and stored without source

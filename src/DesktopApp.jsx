@@ -38,6 +38,8 @@ import {
   getStatusLabel,
   transitionReturn,
 } from './returnLifecycle.js'
+import { createReturn, recordDecision, searchOrders, setReturnStatus } from './api.js'
+import { fromServerReturn, pickItem, pickOrder, provisionalReturn } from './returnRecords.js'
 import './App.css'
 
 const workflowSteps = [
@@ -47,6 +49,7 @@ const workflowSteps = [
 ]
 
 const SAMPLE_LOOKUP = 'ORD-8921'
+const statusRank = (status) => Object.values(RETURN_STATUS).indexOf(status)
 
 function LayeredIcon({ className = '', children }) {
   return <span className={`layered-icon ${className}`}>{children}</span>
@@ -118,7 +121,23 @@ function Workstation({ session, onSignOut }) {
   const [mode, setMode] = useState(preferences.defaultLookupMode)
   const [lookup, setLookup] = useState('')
   const [status, setStatus] = useState('')
+  const [creating, setCreating] = useState(false)
   const inputRef = useRef(null)
+  const lookupRequest = useRef(0)
+
+  // Replaces the case with the server's copy, keeping the unsaved inspection note.
+  // A slow response (e.g. the AI check) never moves the status backwards.
+  const applyServerReturn = (record) => {
+    setReturnCase((current) => {
+      const next = fromServerReturn(record)
+      if (current?.saved && current.id === next.id && statusRank(next.status) < statusRank(current.status)) {
+        next.status = current.status
+        next.history = current.history
+        next.decision = current.decision
+      }
+      return { ...next, inspectionNote: current?.inspectionNote || '' }
+    })
+  }
 
   const chooseMode = (nextMode) => {
     setMode(nextMode)
@@ -128,7 +147,9 @@ function Workstation({ session, onSignOut }) {
     }
   }
 
-  const lookUpReturn = (rawValue) => {
+  // Looks the identifier up in the orders database. If the server can't be
+  // reached, falls back to the built-in demo return so the UI still works.
+  const lookUpReturn = async (rawValue) => {
     const value = rawValue.trim()
     if (!value) {
       setReturnCase((current) => (
@@ -138,9 +159,32 @@ function Workstation({ session, onSignOut }) {
       return
     }
 
-    const identifiedReturn = createIdentifiedReturn(value)
-    setReturnCase(identifiedReturn)
-    setStatus(`Return ${identifiedReturn.id} identified. Confirm it to begin the inspection.`)
+    const request = ++lookupRequest.current
+    setStatus(`Looking up ${value}…`)
+    try {
+      const orders = await searchOrders(value)
+      if (request !== lookupRequest.current) return
+      if (!orders.length) {
+        setReturnCase((current) => (current?.status === RETURN_STATUS.IDENTIFIED ? null : current))
+        setStatus(`No order matches “${value}”. Check the identifier and try again.`)
+        return
+      }
+      const order = pickOrder(orders, value)
+      const item = pickItem(order, value)
+      setReturnCase(provisionalReturn(order, item, value))
+      setStatus(
+        `Order ${order.id} found${order.items.length > 1 ? ` (matched ${item.product_name})` : ''}. Confirm it to begin the inspection.`,
+      )
+    } catch (error) {
+      if (request !== lookupRequest.current) return
+      if (!error.offline) {
+        setStatus(error.message)
+        return
+      }
+      const identifiedReturn = { ...createIdentifiedReturn(value), demo: true }
+      setReturnCase(identifiedReturn)
+      setStatus(`Server offline: showing demo return ${identifiedReturn.id}. Nothing will be saved.`)
+    }
   }
 
   const findReturn = (event) => {
@@ -183,8 +227,20 @@ function Workstation({ session, onSignOut }) {
       startNewReturn()
       return
     }
+    // Saved returns move forward through the server so its status stays in sync.
+    if (currentReturn === returnCase && returnCase?.saved) {
+      if (step === 'review' && returnCase.status === RETURN_STATUS.INSPECTION_IN_PROGRESS) {
+        continueToReview()
+      } else {
+        beginInspection()
+      }
+      return
+    }
 
-    let nextReturn = currentReturn || createIdentifiedReturn(SAMPLE_LOOKUP)
+    // A provisional (not yet created) case can't skip ahead; use the demo instead.
+    let nextReturn = currentReturn && !currentReturn.pending
+      ? currentReturn
+      : { ...createIdentifiedReturn(SAMPLE_LOOKUP), demo: true }
     if (nextReturn.status === RETURN_STATUS.IDENTIFIED) {
       nextReturn = transitionReturn(nextReturn, RETURN_STATUS.INSPECTION_IN_PROGRESS)
     }
@@ -198,31 +254,98 @@ function Workstation({ session, onSignOut }) {
     setScreen(step)
   }
 
-  const beginInspection = () => {
-    setReturnCase((current) => (
-      current.status === RETURN_STATUS.IDENTIFIED
-        ? transitionReturn(current, RETURN_STATUS.INSPECTION_IN_PROGRESS)
-        : current
+  // Confirming the order creates the return in the database, then starts the inspection.
+  const beginInspection = async () => {
+    if (creating) return
+    let current = returnCase
+
+    if (current.pending || (current.saved && current.status === RETURN_STATUS.IDENTIFIED)) {
+      setCreating(true)
+      setStatus(current.pending ? 'Creating the return…' : 'Starting the inspection…')
+      try {
+        if (current.pending) {
+          const created = await createReturn({
+            order_id: current.pending.orderId,
+            order_item_id: current.pending.orderItemId,
+            lookup_identifier: current.lookupIdentifier,
+            station: user.station || null,
+            reviewer_email: user.email,
+          })
+          applyServerReturn(created)
+          current = fromServerReturn(created)
+        }
+        applyServerReturn(await setReturnStatus(current.id, RETURN_STATUS.INSPECTION_IN_PROGRESS))
+        setStatus('')
+        setScreen('inspection')
+      } catch (error) {
+        setStatus(`Could not start the return: ${error.message}`)
+      } finally {
+        setCreating(false)
+      }
+      return
+    }
+
+    setReturnCase((existing) => (
+      existing.status === RETURN_STATUS.IDENTIFIED
+        ? transitionReturn(existing, RETURN_STATUS.INSPECTION_IN_PROGRESS)
+        : existing
     ))
     setScreen('inspection')
   }
 
-  const continueToReview = () => {
+  // Returns an error message for the inspection screen, or null on success.
+  const continueToReview = async () => {
+    if (returnCase.saved) {
+      if (returnCase.status === RETURN_STATUS.INSPECTION_IN_PROGRESS) {
+        try {
+          applyServerReturn(await setReturnStatus(returnCase.id, RETURN_STATUS.AWAITING_DECISION))
+        } catch (error) {
+          return `Could not continue: ${error.message}`
+        }
+      }
+      setScreen('review')
+      return null
+    }
+
     setReturnCase((current) => (
       current.status === RETURN_STATUS.INSPECTION_IN_PROGRESS
         ? transitionReturn(current, RETURN_STATUS.AWAITING_DECISION)
         : current
     ))
     setScreen('review')
+    return null
   }
 
-  const completeReturn = (decision) => {
-    if (returnCase?.status !== RETURN_STATUS.AWAITING_DECISION) return
+  // Returns an error message for the review screen, or null on success.
+  const completeReturn = async (decision) => {
+    if (returnCase?.status !== RETURN_STATUS.AWAITING_DECISION) {
+      return 'This return is not ready for a decision yet.'
+    }
 
-    const completedReturn = transitionReturn(returnCase, RETURN_STATUS.COMPLETED, {
-      decision,
-      activityLabel: `Decision recorded: ${decision.title}`,
-    })
+    let completedReturn
+    if (returnCase.saved) {
+      const note = [
+        decision.note.trim(),
+        returnCase.inspectionNote?.trim() && `Inspection note: ${returnCase.inspectionNote.trim()}`,
+      ].filter(Boolean).join('\n\n')
+      try {
+        const saved = await recordDecision(returnCase.id, {
+          outcome: decision.type,
+          reason: decision.type === 'approve' ? null : decision.reason || null,
+          note: note || null,
+          reviewer_email: user.email,
+        })
+        completedReturn = { ...fromServerReturn(saved), inspectionNote: returnCase.inspectionNote }
+      } catch (error) {
+        return `Could not save the decision: ${error.message}`
+      }
+    } else {
+      completedReturn = transitionReturn(returnCase, RETURN_STATUS.COMPLETED, {
+        decision,
+        activityLabel: `Decision recorded: ${decision.title}`,
+      })
+    }
+
     const nextHistory = [{
       id: completedReturn.id,
       productName: completedReturn.productName,
@@ -235,6 +358,7 @@ function Workstation({ session, onSignOut }) {
     setReturnCase(completedReturn)
     setHistory(nextHistory)
     saveDecisionHistory(user.email, nextHistory)
+    return null
   }
 
   const startNewReturn = () => {
@@ -430,8 +554,8 @@ function Workstation({ session, onSignOut }) {
                     <strong>{returnCase.productName}</strong>
                     <span>Order #{returnCase.orderNumber} / {returnCase.productModel}</span>
                   </div>
-                  <button type="button" onClick={beginInspection}>
-                    {returnCase.status === RETURN_STATUS.IDENTIFIED ? 'Begin inspection' : 'Continue return'}
+                  <button type="button" onClick={beginInspection} disabled={creating}>
+                    {creating ? 'Creating…' : returnCase.status === RETURN_STATUS.IDENTIFIED ? 'Begin inspection' : 'Continue return'}
                   </button>
                 </div>
               ) : null}
@@ -503,6 +627,8 @@ function Workstation({ session, onSignOut }) {
       ) : screen === 'inspection' ? (
         <ItemInspection
           returnCase={returnCase}
+          onServerUpdate={applyServerReturn}
+          onNoteChange={(inspectionNote) => setReturnCase((current) => ({ ...current, inspectionNote }))}
           onBack={() => openStep('identify')}
           onContinue={continueToReview}
         />

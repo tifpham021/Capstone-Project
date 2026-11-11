@@ -10,6 +10,8 @@ import warningCircle from './assets/figma/inspection/4633e.svg'
 import warningMark from './assets/figma/inspection/630e0.svg'
 import continueArrow from './assets/figma/inspection/d859a.svg'
 import { RETURN_STATUS } from './returnLifecycle.js'
+import { apiUrl } from './api.js'
+import { evidenceSignals, latest, recommendation } from './returnRecords.js'
 import './ReviewDecision.css'
 
 const decisions = [
@@ -98,14 +100,43 @@ function ReviewDecision({ returnCase, onIdentify, onBack, onSubmitDecision, revi
   const [reason, setReason] = useState(returnCase.decision?.reason || 'Missing serial / identity evidence')
   const [note, setNote] = useState(returnCase.decision?.note || '')
   const [feedback, setFeedback] = useState('')
+  const [submitting, setSubmitting] = useState(false)
   const isComplete = returnCase.status === RETURN_STATUS.COMPLETED
+  const saved = Boolean(returnCase.saved)
 
-  const submitDecision = (event) => {
+  const submitDecision = async (event) => {
     event.preventDefault()
+    if (submitting) return
     const title = decisions.find((option) => option.id === decision)?.title
-    onSubmitDecision({ type: decision, title, reason, note })
-    setFeedback(`${title} recorded for ${returnCase.id}.`)
+    setSubmitting(true)
+    setFeedback(saved ? 'Saving decision…' : '')
+    const error = await onSubmitDecision({ type: decision, title, reason, note })
+    setSubmitting(false)
+    setFeedback(error || `${title} recorded for ${returnCase.id}.`)
   }
+
+  // Saved returns show their real evidence; the demo keeps its sample content.
+  const savedSignals = saved ? evidenceSignals(returnCase) : null
+  const advice = saved ? recommendation(savedSignals) : null
+  const verification = saved ? latest(returnCase.verifications) : null
+  const confidence = saved ? (verification ? Math.round(verification.confidence * 100) : null) : 86
+  const signalRows = saved
+    ? savedSignals.map((signal) => [
+      signal.label,
+      signal.state === 'match' ? 'Match' : signal.state === 'review' ? 'Review' : 'Not captured',
+    ])
+    : signals
+  const referenceImage = saved ? apiUrl(returnCase.orderImages[0]?.url) : shippedReference
+  const returnedImage = saved ? apiUrl(latest(returnCase.returnImages)?.url) : returnedItem
+  const lastSaved = saved ? latest(returnCase.history)?.occurredAt : null
+  const refund = returnCase.refundAmount === null || returnCase.refundAmount === undefined
+    ? null
+    : returnCase.refundAmount
+  const describe = (option) => (
+    option.id === 'approve'
+      ? refund === null ? 'Approve the return and close the case.' : `Issue the $${refund.toFixed(2)} refund and close the case.`
+      : option.description
+  )
 
   return (
     <>
@@ -136,42 +167,46 @@ function ReviewDecision({ returnCase, onIdentify, onBack, onSubmitDecision, revi
               </ReviewAsset>
               <div>
                 <span>System recommendation</span>
-                <h2 id="recommendation-title">Likely authentic - one check remains</h2>
-                <p>Weight and geometry align. Serial markings were not captured, so human judgment remains required.</p>
+                <h2 id="recommendation-title">{advice ? advice.title : 'Likely authentic - one check remains'}</h2>
+                <p>{advice ? advice.detail : 'Weight and geometry align. Serial markings were not captured, so human judgment remains required.'}</p>
               </div>
               <div className="confidence-score">
-                <strong>86%</strong>
-                <span>Match confidence</span>
-                <i><b /></i>
+                <strong>{confidence === null ? '—' : `${confidence}%`}</strong>
+                <span>{confidence === null ? 'No AI result yet' : 'Visual match'}</span>
+                <i><b style={{ width: `${confidence || 0}%` }} /></i>
               </div>
             </section>
 
             <section className="review-evidence-card" aria-labelledby="evidence-title">
               <div className="review-card-heading">
                 <h2 id="evidence-title">Evidence package</h2>
-                <span><i />Saved at 10:42</span>
+                <span><i />{saved ? `Saved at ${lastSaved ? formatActivityTime(lastSaved) : '—'}` : 'Demo, not saved'}</span>
               </div>
 
               <dl className="evidence-metadata">
                 <div><dt>Order</dt><dd>#{returnCase.orderNumber}</dd></div>
                 <div><dt>SKU</dt><dd>{returnCase.sku}</dd></div>
                 <div><dt>Serial</dt><dd>{returnCase.serialNumber}</dd></div>
-                <div><dt>Refund</dt><dd>${returnCase.refundAmount.toFixed(2)}</dd></div>
+                <div><dt>Refund</dt><dd>{refund === null ? '—' : `$${refund.toFixed(2)}`}</dd></div>
                 <div><dt>Customer</dt><dd>{returnCase.customerName}</dd></div>
               </dl>
 
               <div className="evidence-review-grid">
                 <figure>
-                  <img src={shippedReference} alt="Verified shipped cordless drill reference" />
+                  {referenceImage
+                    ? <img src={referenceImage} alt={`Original photo of ${returnCase.productName}`} />
+                    : <p className="review-empty">No original photo on file</p>}
                   <figcaption><i />Shipped reference</figcaption>
                 </figure>
                 <figure>
-                  <img src={returnedItem} alt="Live photo of the returned cordless drill" />
+                  {returnedImage
+                    ? <img src={returnedImage} alt={`Photo of the returned ${returnCase.productName}`} />
+                    : <p className="review-empty">No return photo captured</p>}
                   <figcaption><i />Returned item</figcaption>
                 </figure>
                 <div className="verification-signals">
                   <h3>Verification signals</h3>
-                  {signals.map(([label, status]) => (
+                  {signalRows.map(([label, status]) => (
                     <div key={label}>
                       <span className={status === 'Match' ? 'signal-check' : 'signal-alert'}>
                         {status === 'Match' ? '✓' : '!'}
@@ -188,7 +223,14 @@ function ReviewDecision({ returnCase, onIdentify, onBack, onSubmitDecision, revi
                   <img src={warningCircle} alt="" />
                   <img src={warningMark} alt="" />
                 </ReviewAsset>
-                <div><strong>Reviewer attention</strong><span>Capture the battery-bay serial plate or document why the available evidence is sufficient.</span></div>
+                <div>
+                  <strong>Reviewer attention</strong>
+                  <span>
+                    {saved
+                      ? 'Check the photos and readings yourself. Note in your decision why the evidence is sufficient.'
+                      : 'Capture the battery-bay serial plate or document why the available evidence is sufficient.'}
+                  </span>
+                </div>
                 <button type="button" onClick={onBack}>View inspection</button>
               </div>
             </section>
@@ -229,7 +271,7 @@ function ReviewDecision({ returnCase, onIdentify, onBack, onSubmitDecision, revi
                     onChange={() => setDecision(option.id)}
                   />
                   <span className="decision-radio"><i /></span>
-                  <span><strong>{option.title}</strong><small>{option.description}</small></span>
+                  <span><strong>{option.title}</strong><small>{describe(option)}</small></span>
                   <b>{decision === option.id && option.id === 'secondary' ? 'Selected' : option.badge}</b>
                 </label>
               ))}
@@ -268,8 +310,8 @@ function ReviewDecision({ returnCase, onIdentify, onBack, onSubmitDecision, revi
         </div>
         <div className="review-actions">
           <button type="button" className="back-button" onClick={onBack}>‹&nbsp; Back to inspection</button>
-          <button type="submit" form="review-decision-form" className="submit-review-button" disabled={isComplete}>
-            {isComplete ? 'Decision recorded' : 'Send for review'}
+          <button type="submit" form="review-decision-form" className="submit-review-button" disabled={isComplete || submitting}>
+            {isComplete ? 'Decision recorded' : submitting ? 'Saving…' : 'Send for review'}
             <img src={continueArrow} alt="" />
           </button>
         </div>

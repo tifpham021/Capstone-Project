@@ -14,6 +14,15 @@ import neutralDot from './assets/figma/inspection/140bd.svg'
 import shieldCircle from './assets/figma/inspection/57345.svg'
 import shieldCheck from './assets/figma/inspection/702ae.svg'
 import continueArrow from './assets/figma/inspection/d859a.svg'
+import {
+  apiUrl,
+  attachVerification,
+  getReturn,
+  recordWeight,
+  uploadReturnImage,
+  verifyPhoto,
+} from './api.js'
+import { evidenceSignals, latest } from './returnRecords.js'
 import './ItemInspection.css'
 
 const checks = [
@@ -108,10 +117,19 @@ function stopStream(stream) {
   stream?.getTracks().forEach((track) => track.stop())
 }
 
-function ItemInspection({ returnCase, onBack, onContinue }) {
-  const [note, setNote] = useState('')
+const formatKg = (grams, signed = false) => {
+  const kg = grams / 1000
+  return `${signed && kg > 0 ? '+' : ''}${kg.toFixed(2)} kg`
+}
+
+function ItemInspection({ returnCase, onServerUpdate, onNoteChange, onBack, onContinue }) {
+  const saved = Boolean(returnCase.saved)
+  const [note, setNote] = useState(returnCase.inspectionNote || '')
   const [photoCount, setPhotoCount] = useState(2)
   const [weight, setWeight] = useState('1.61')
+  const [weightInput, setWeightInput] = useState('')
+  const [savingWeight, setSavingWeight] = useState(false)
+  const [aiStatus, setAiStatus] = useState('')
   const [feedback, setFeedback] = useState('')
   const [photoMode, setPhotoMode] = useState(null)
   const [cameraError, setCameraError] = useState('')
@@ -204,8 +222,76 @@ function ItemInspection({ returnCase, onBack, onContinue }) {
     setAddedPhotos((photos) => [...photos, url])
     setReturnedPreview(url)
     setPhotoCount((count) => Math.min(count + 1, 4))
-    setFeedback(`${file.name || 'Photo'} added to the evidence package.`)
     closePhotoTools()
+
+    if (!saved) {
+      setFeedback(`${file.name || 'Photo'} added to the evidence package (demo, not saved).`)
+      return
+    }
+    savePhoto(file)
+  }
+
+  // Saves the photo to this return, then compares it with the product's
+  // reference photos when the product is enrolled for AI.
+  const savePhoto = async (file) => {
+    setFeedback('Saving photo…')
+    try {
+      await uploadReturnImage(returnCase.id, file, 'label')
+      onServerUpdate(await getReturn(returnCase.id))
+      setFeedback(`Photo saved to ${returnCase.id}.`)
+    } catch (error) {
+      setFeedback(`Photo not saved: ${error.message}`)
+      return
+    }
+
+    if (!returnCase.productId) return
+    setAiStatus('Running the AI visual comparison… The first run after the server starts can take a minute.')
+    try {
+      const result = await verifyPhoto(file, returnCase.productId)
+      await attachVerification(returnCase.id, result.request_id)
+      onServerUpdate(await getReturn(returnCase.id))
+      setAiStatus('')
+    } catch (error) {
+      setAiStatus(
+        error.status === 404 || error.status === 409
+          ? 'AI comparison skipped: this product has no reference photos enrolled yet.'
+          : `AI comparison unavailable: ${error.message}`,
+      )
+    }
+  }
+
+  const submitWeight = async (event) => {
+    event.preventDefault()
+    const kg = Number.parseFloat(weightInput)
+    if (!Number.isFinite(kg) || kg <= 0) {
+      setFeedback('Enter the scale reading in kilograms, for example 1.61.')
+      return
+    }
+    setSavingWeight(true)
+    try {
+      const check = await recordWeight(returnCase.id, Math.round(kg * 1000 * 10) / 10)
+      onServerUpdate(await getReturn(returnCase.id))
+      setWeightInput('')
+      setFeedback(
+        check.within_tolerance
+          ? `Weight saved: ${formatKg(check.measured_weight_g)} is within tolerance.`
+          : `Weight saved: ${formatKg(check.measured_weight_g)} is outside tolerance (${formatKg(check.difference_g, true)}).`,
+      )
+    } catch (error) {
+      setFeedback(`Weight not saved: ${error.message}`)
+    } finally {
+      setSavingWeight(false)
+    }
+  }
+
+  const updateNote = (value) => {
+    setNote(value)
+    onNoteChange?.(value)
+  }
+
+  const handleContinue = async () => {
+    const error = await onContinue()
+    if (error) setFeedback(error)
   }
 
   const onFileSelected = (event) => {
@@ -240,10 +326,23 @@ function ItemInspection({ returnCase, onBack, onContinue }) {
     setFeedback(tared ? 'Live scale reading restored.' : 'Scale tared successfully.')
   }
 
+  // Saved returns show real evidence from the server; the demo keeps its sample data.
+  const checkRows = saved ? evidenceSignals(returnCase) : checks
+  const completedChecks = checkRows.filter((check) => check.state !== 'pending').length
+  const attentionChecks = checkRows.filter((check) => check.state !== 'match').length
+  const lastWeight = saved ? latest(returnCase.weightChecks) : null
+  const referenceImage = saved ? apiUrl(returnCase.orderImages[0]?.url) : shippedReference
+  const returnedImage = addedPhotos.length || !saved
+    ? returnedPreview
+    : apiUrl(latest(returnCase.returnImages)?.url)
+  const imageCount = saved
+    ? returnCase.orderImages.length + returnCase.returnImages.length
+    : photoCount
+
   return (
     <>
       <main id="main" className="inspection-page">
-        <InspectionWorkflow onBack={onBack} onContinue={onContinue} />
+        <InspectionWorkflow onBack={onBack} onContinue={handleContinue} />
 
         <section className="inspection-intro" aria-labelledby="inspection-title">
           <div>
@@ -260,23 +359,33 @@ function ItemInspection({ returnCase, onBack, onContinue }) {
           </div>
         </section>
 
-        <div className="inspection-dashboard">
+        <div className={`inspection-dashboard${saved ? ' saved-evidence' : ''}`}>
           <section className="comparison-card" aria-labelledby="comparison-title">
             <div className="comparison-heading">
               <h2 id="comparison-title">Visual comparison</h2>
-              <span>{photoCount} images synced</span>
+              <span>{imageCount} images {saved ? 'saved' : 'synced'}</span>
             </div>
 
             <div className="comparison-images">
               <figure>
-                <img src={shippedReference} alt="Verified shipped cordless drill reference" />
+                {referenceImage ? (
+                  <img src={referenceImage} alt={`Original photo of ${returnCase.productName} before shipping`} />
+                ) : (
+                  <p className="comparison-empty">No original photo on file for this order item.</p>
+                )}
                 <figcaption className="image-label reference-label"><i />Shipped reference</figcaption>
-                <span className="image-count">01 / 04</span>
+                {saved ? (
+                  returnCase.orderImages.length ? <span className="image-count">01 / {String(returnCase.orderImages.length).padStart(2, '0')}</span> : null
+                ) : <span className="image-count">01 / 04</span>}
               </figure>
               <figure>
-                <img src={returnedPreview} alt="Live photo of the returned cordless drill" />
+                {returnedImage ? (
+                  <img src={returnedImage} alt={`Photo of the returned ${returnCase.productName}`} />
+                ) : (
+                  <p className="comparison-empty">No photo yet. Use Add photo to capture the returned item.</p>
+                )}
                 <figcaption className="image-label returned-label"><i />Returned item</figcaption>
-                <span className="image-count live-count">{addedPhotos.length ? 'Added' : 'Live'}</span>
+                <span className="image-count live-count">{addedPhotos.length || (saved && returnCase.returnImages.length) ? 'Added' : 'Live'}</span>
               </figure>
             </div>
 
@@ -286,8 +395,17 @@ function ItemInspection({ returnCase, onBack, onContinue }) {
                 <img src={warningMark} alt="" />
               </StackedAsset>
               <div>
-                <strong>Photo angle needs attention</strong>
-                <p>Product shape appears consistent. Add a clear serial-plate photo to complete the check.</p>
+                {saved ? (
+                  <>
+                    <strong>{returnCase.returnImages.length ? 'Add another angle' : 'Photograph the returned item'}</strong>
+                    <p>Capture the item and its serial plate. Photos are saved to this return and compared with the original.</p>
+                  </>
+                ) : (
+                  <>
+                    <strong>Photo angle needs attention</strong>
+                    <p>Product shape appears consistent. Add a clear serial-plate photo to complete the check.</p>
+                  </>
+                )}
               </div>
               <button
                 className="add-photo-button"
@@ -302,7 +420,7 @@ function ItemInspection({ returnCase, onBack, onContinue }) {
               <span>Inspection note</span>
               <textarea
                 value={note}
-                onChange={(event) => setNote(event.target.value)}
+                onChange={(event) => updateNote(event.target.value)}
                 placeholder="Add observations about packaging, wear, serial markings, or unusual details..."
               />
               <small>Notes will be included in the final review record.</small>
@@ -310,6 +428,53 @@ function ItemInspection({ returnCase, onBack, onContinue }) {
           </section>
 
           <aside className="inspection-sidebar" aria-label="Automated inspection results">
+            {saved ? (
+            <section className="weight-card">
+              <div className="weight-heading">
+                <h2>Weight check</h2>
+                <span className="stable-pill"><i />Manual entry</span>
+              </div>
+              <div className="weight-reading">
+                <div className="current-weight">
+                  <strong>{lastWeight ? (lastWeight.measured_weight_g / 1000).toFixed(2) : '—'}</strong><b>kg</b>
+                  <span>{lastWeight ? 'Recorded scale reading' : 'No reading recorded yet'}</span>
+                </div>
+                <div className="expected-weight">
+                  <span>Expected</span>
+                  <strong>{returnCase.expectedWeightKg ? `${returnCase.expectedWeightKg.toFixed(2)} kg` : 'Not on file'}</strong>
+                  {lastWeight ? (
+                    <span>Delta <b className={lastWeight.within_tolerance ? '' : 'out'}>{formatKg(lastWeight.difference_g, true)}</b></span>
+                  ) : null}
+                </div>
+              </div>
+              <form className="weight-entry" onSubmit={submitWeight}>
+                <label>
+                  <span className="sr-only">Scale reading in kilograms</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.001"
+                    min="0"
+                    placeholder={returnCase.expectedWeightKg ? 'Scale reading in kg, e.g. 1.61' : 'No expected weight on file'}
+                    value={weightInput}
+                    onChange={(event) => setWeightInput(event.target.value)}
+                    disabled={!returnCase.expectedWeightKg || savingWeight}
+                  />
+                </label>
+                <button type="submit" disabled={!returnCase.expectedWeightKg || savingWeight || !weightInput}>
+                  {savingWeight ? 'Saving…' : 'Record weight'}
+                </button>
+              </form>
+              {lastWeight ? (
+                <div className={`tolerance-bar${lastWeight.within_tolerance ? '' : ' out'}`}>
+                  <span>{lastWeight.within_tolerance ? '✓' : '!'}</span>
+                  <strong>
+                    {lastWeight.within_tolerance ? 'Within' : 'Outside'} ±{(lastWeight.tolerance_g / 1000).toFixed(3)} kg tolerance
+                  </strong>
+                </div>
+              ) : null}
+            </section>
+            ) : (
             <section className="weight-card">
               <div className="weight-heading">
                 <h2>Live weight check</h2>
@@ -332,14 +497,16 @@ function ItemInspection({ returnCase, onBack, onContinue }) {
                 <button type="button" onClick={toggleTare}>{weight === '0.00' ? 'Use live reading' : 'Tare scale'}</button>
               </div>
             </section>
+            )}
 
             <section className="automated-card">
               <div className="automated-heading">
                 <h2>Automated checks</h2>
-                <span>3 of 4 complete</span>
+                <span>{completedChecks} of {checkRows.length} complete</span>
               </div>
+              {aiStatus ? <p className="ai-status" role="status">{aiStatus}</p> : null}
               <div className="checks-list">
-                {checks.map((check) => (
+                {checkRows.map((check) => (
                   <div className="check-row" key={check.title}>
                     <StatusIcon state={check.state} />
                     <div><strong>{check.title}</strong><small>{check.detail}</small></div>
@@ -356,9 +523,13 @@ function ItemInspection({ returnCase, onBack, onContinue }) {
               </StackedAsset>
               <div>
                 <h2>Evidence package is preserved</h2>
-                <p>Images, readings, and reviewer notes will carry into the decision.</p>
+                <p>
+                  {saved
+                    ? 'Photos and weights are saved to this return as you add them. The note is saved with the decision.'
+                    : 'Images, readings, and reviewer notes will carry into the decision.'}
+                </p>
               </div>
-              <span className="autosaved-pill">Auto-saved</span>
+              <span className="autosaved-pill">{saved ? 'Auto-saved' : 'Demo only'}</span>
             </section>
           </aside>
         </div>
@@ -366,12 +537,26 @@ function ItemInspection({ returnCase, onBack, onContinue }) {
 
       <footer className="inspection-footer">
         <div>
-          <strong>2 checks need attention</strong>
-          <span aria-live="polite">{feedback || 'You can continue now or add the recommended photos for higher confidence.'}</span>
+          <strong>
+            {attentionChecks ? `${attentionChecks} check${attentionChecks === 1 ? ' needs' : 's need'} attention` : 'All checks complete'}
+          </strong>
+          <span aria-live="polite">
+            {feedback || (returnCase.demo
+              ? 'Demo return: nothing on this page is saved. Start the backend and look up an order to save evidence.'
+              : 'You can continue now or add the recommended photos for higher confidence.')}
+          </span>
         </div>
         <div className="inspection-actions">
-          <button type="button" className="save-button" onClick={() => setFeedback('Progress is kept for this browser session.')}>Save for later</button>
-          <button type="button" className="continue-button" onClick={onContinue}>
+          <button
+            type="button"
+            className="save-button"
+            onClick={() => setFeedback(saved
+              ? `Photos and weights are already saved to ${returnCase.id}.`
+              : 'Progress is kept for this browser session.')}
+          >
+            Save for later
+          </button>
+          <button type="button" className="continue-button" onClick={handleContinue}>
             Continue to review
             <img src={continueArrow} alt="" />
           </button>

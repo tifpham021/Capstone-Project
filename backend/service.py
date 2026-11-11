@@ -1,19 +1,17 @@
 from __future__ import annotations
 
-import io
 import json
 import logging
 import re
 import threading
 import time
 import uuid
-import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw, ImageEnhance, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageDraw, ImageEnhance
 
 from backend.algorithms import (
     IMAGE_SIZE,
@@ -25,6 +23,7 @@ from backend.algorithms import (
     patch_distances,
     sift_match,
 )
+from backend.common import ServiceError, decode_image  # noqa: F401 (re-exported)
 from backend.config import Settings
 from backend.schemas import ProductSummary, Thresholds, VerificationResponse
 
@@ -32,41 +31,6 @@ LOG = logging.getLogger(__name__)
 PRODUCT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
 RESULT_ID = re.compile(r"[a-f0-9]{32}\Z")
 ALLOWED_ARTIFACTS = {"discrepancy.png", "heatmap.png", "result.json"}
-
-
-class ServiceError(Exception):
-    def __init__(self, detail: str, status_code: int = 422):
-        super().__init__(detail)
-        self.status_code = status_code
-
-
-def decode_image(data: bytes, settings: Settings) -> Image.Image:
-    if not data:
-        raise ServiceError("Image is empty", 400)
-    if len(data) > settings.max_upload_bytes:
-        raise ServiceError("Image exceeds the upload limit", 413)
-    try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", Image.DecompressionBombWarning)
-            with Image.open(io.BytesIO(data)) as source:
-                if source.format not in {"JPEG", "PNG", "WEBP"}:
-                    raise ServiceError("Image must be JPEG, PNG or WebP", 415)
-                # Check the header BEFORE decoding the full pixel allocation.
-                if source.width * source.height > settings.max_pixels:
-                    raise ServiceError("Image exceeds the pixel limit", 413)
-                if min(source.size) < 64:
-                    raise ServiceError("Image must be at least 64 x 64 pixels")
-                source.load()
-                oriented = ImageOps.exif_transpose(source)
-                oriented.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
-                rgba = oriented.convert("RGBA")
-                background = Image.new("RGBA", rgba.size, "white")
-                image = Image.alpha_composite(background, rgba).convert("RGB")
-    except (Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
-        raise ServiceError("Image exceeds the pixel safety limit", 413) from exc
-    except (UnidentifiedImageError, OSError, ValueError) as exc:
-        raise ServiceError("File is not a readable image", 415) from exc
-    return image
 
 
 def write_json(destination: Path, value):

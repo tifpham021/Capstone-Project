@@ -18,13 +18,13 @@ python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --workers 1
 Open <http://127.0.0.1:8000/docs> for interactive upload forms and the exact JSON
 schemas. `/openapi.json` exposes the machine-readable contract. Startup does not
 download weights. The first verification loads the pinned DINOv2 source and
-pretrained weights, builds the reference index, and initializes local matching.
+pretrained weights, builds the reference index, and initializes foreground alignment.
 That request also downloads the small U2Netp foreground model (~4.6 MB) and is slower.
 Internet access is needed for uncached weights; subsequent requests reuse caches.
 
 `RETURNSCAN_DEVICE=auto` chooses CUDA, then Apple Metal/MPS, then CPU. On an M4,
-DINOv2/PatchCore uses MPS when available; ALIKED/LightGlue and ONNX foreground
-segmentation use CPU for portability.
+DINOv2/PatchCore uses MPS when available; foreground segmentation and OpenCV
+rectangle warps run on CPU. The default path does not load ALIKED/LightGlue.
 To force CPU, prefix the command with `RETURNSCAN_DEVICE=cpu`.
 
 Use **one worker**: model state and JSON catalog writes are serialized within one
@@ -76,8 +76,11 @@ curl http://127.0.0.1:8000/v1/verify \
 
 Alternatively send `barcode=1234567890123`. Do not send both identity fields.
 Omit both to retrieve the closest product from the reference catalog using CV.
-Use `local_backend=auto` (default), `aliked` (fail if unavailable) or `sift`
-(explicit CPU local-feature fallback; DINOv2 is still required).
+Alignment defaults to **foreground rectangle normalization**. No minimum local
+feature-match count is required. Set `RETURNSCAN_ALIGNMENT_METHOD=features` and
+restart to use the previous feature-based homography path. Only that path uses
+`local_backend=auto`, `aliked` (fail if unavailable) or `sift`. This form field is
+accepted for compatibility but does not change rectangle alignment.
 
 The response includes:
 
@@ -87,17 +90,26 @@ The response includes:
 - `identified_product`, `compared_product`, `identity_consistent`,
   `identity_ambiguous`, and ranked candidates. Near-tied catalog matches require
   identity review instead of an arbitrary high-confidence SKU assignment.
-- `geometry`: backend, MAGSAC++ inliers, foreground-relative coverage in **both**
-  images, symmetric median reprojection error (pixels at a 1024-pixel long edge),
-  foreground IoU, reference index, number of views attempted, alignment validity,
-  and a rejection reason. Reference indices are zero-based enrollment order.
+- `geometry`: `alignment_method`, `alignment_quality`, `alignment_valid`,
+  foreground IoU, selected corner orientation (`rotation_degrees`), zero-based
+  reference index and reference attempts. Rectangle mode reports `outline_only`:
+  validity means the foreground warp was applied, not verified feature alignment.
+  `matches`, `inliers` and feature coverage remain zero in rectangle mode.
+  `reference_corners` and `query_corners` are in each cropped foreground's pixel
+  coordinates. Their respective 3×3 transforms map into the common `canvas_size`.
+  `orientation_score` is mean spatial DINO patch cosine similarity plus 0.03 ×
+  foreground IoU; it is only used to rank corner orientations.
+  The optional feature path additionally reports MAGSAC++ match/inlier evidence
+  and median symmetric reprojection error at a 1024-pixel long edge.
 - `segmentation`: model name, query validity and foreground fractions before cropping.
 - `score_is_informational`: true for an inconclusive comparison; do not use its
   confidence as evidence of authenticity.
 - `diagnostic_image_urls`: original photo, foreground cutout, selected reference,
-  aligned image, foreground mask and comparison mask. These use the same protected
-  PNG route as the discrepancy outputs. When alignment fails, `aligned` shows the
-  unaligned cutout and the comparison mask is its foreground mask.
+  aligned image, foreground mask and comparison mask. `reference` is the normalized
+  reference used by PatchCore; `reference-foreground` is its original cutout.
+  These use the same protected PNG route as discrepancy outputs. When alignment
+  fails, the `aligned` URL is omitted and that PNG returns 404; the unaligned
+  cutout remains available as `foreground`.
 - `patchcore`: anomaly and normality scores; higher anomaly means more differences.
 - `discrepancy_image_url`, `heatmap_image_url`: paths relative to this API server.
 - `discrepancy_regions`: boxes in the **448×448 aligned/letterboxed query**, not
@@ -155,18 +167,21 @@ does not validate the React app's OAuth session or perform refund decisions.
    320×320 on CPU. BiRefNet Lite remains an optional higher-resolution alternative.
    Threshold the mask, crop with a small margin, and replace background with white.
    Keep all foreground components so detached pieces are not deliberately discarded.
-   Cache reference cutouts, masks and DINO brightness variants in memory. ALIKED
-   reference descriptors are cached on their first use. References rebuild after restart.
-2. Frozen `dinov2_vits14` features retrieve the closest catalog product and rank
-   its reference views. Try the closest view first, then other views until a fit
-   passes geometric and foreground checks. This is a latency optimization; it
-   does not exhaustively choose the lowest anomaly score across all references.
-3. ALIKED + LightGlue matches **foreground-only keypoints**. OpenCV
-   `USAC_MAGSAC` (MAGSAC++) estimates query-to-reference homography. Require at
-   least 8 inliers, 20% inlier ratio, and inlier-hull coverage of at least 15% of
-   the foreground in **each** image. Reject excessive symmetric reprojection
-   error, degenerate warps, insufficient visible reference area and poor overlap.
-   Explicit SIFT fallback also uses foreground masks and MAGSAC++.
+   Cache reference cutouts, masks and normalized DINO brightness variants.
+   References rebuild after restart.
+2. Frozen `dinov2_vits14` features retrieve the closest catalog product from native
+   cutouts and rank its reference views. Try the closest usable reference first.
+3. **Rectangle alignment is the default.** Fit a convex four-corner outline to
+   the foreground, or use an enclosing minimum-area rectangle when necessary.
+   Include detached foreground pieces in the fitted hull. Normalize the reference
+   with OpenCV `getPerspectiveTransform` / `warpPerspective`, using a canvas up to
+   512 pixels whose aspect follows the reference rectangle, with padding. Normalize
+   the query into the same canvas. Test all four corner orientations and select
+   the best spatial DINO patch similarity with a small mask-overlap term. Reference
+   selection and orientation search are alignment heuristics, not authenticity votes.
+   The default path does not load or require ALIKED/LightGlue/SIFT.
+   The optional `features` mode retains the previous masked ALIKED/LightGlue +
+   MAGSAC++ alignment, with SIFT fallback and distribution/reprojection checks.
 4. Warp both image and mask. Compare spatially nearby DINOv2 patches only in the
    shared foreground, against brightness variants of the selected reference.
    The PatchCore-style score remains the 95th percentile of cosine distances.
@@ -177,9 +192,14 @@ does not validate the React app's OAuth session or perform refund decisions.
 5. Combine retrieval (15%) and patch normality (85%). Geometry is a **comparison
    quality gate**, not an authenticity vote. The legacy `min_geometry_score`
    catalog field is retained for compatibility but no longer controls the decision.
-   A failed alignment or empty query segmentation produces `inconclusive`; any
+   Rectangle alignment is labeled `outline_only`; internal pixel correspondence
+   is not verified. A failed warp or empty query segmentation produces `inconclusive`; any
    unrestricted patch score is informational. An unusable reference requires
    replacement, and model loading errors return `503` rather than fabricated scores.
+
+Rectangle normalization can change patch scores and can normalize away changes
+in overall proportions. Existing thresholds need re-evaluation after changing
+alignment methods.
 
 The scoring weights changed from v1.0; old confidence values and calibrated
 thresholds should not be compared directly. No threshold here is validated for
@@ -199,6 +219,9 @@ See [`.env.example`](.env.example). Export variables or use
 - `RETURNSCAN_DATA_DIR`: catalog, normalized references, results and default model
   cache. Defaults to `backend/.runtime`, excluded from Git.
 - `RETURNSCAN_DEVICE`: `auto`, `cpu`, `mps`, `cuda` (PyTorch models).
+- `RETURNSCAN_ALIGNMENT_METHOD`: `rectangle` (default), or `features` for the
+  previous ALIKED/LightGlue + MAGSAC++ path. Restart after changing it so reference
+  patch banks rebuild in the correct coordinate system.
 - `RETURNSCAN_SEGMENTATION_MODEL`: defaults to `u2netp` (320×320, ~4.6 MB).
   Set `birefnet-general-lite` for the previous 1024×1024 model (~224 MB), or
   `isnet-general-use` for another alternative. Changing it rebuilds reference masks
@@ -225,7 +248,8 @@ Thresholds live per product in `.runtime/catalog.json`. Change them only after
 held-out evaluation and restart the process after manual catalog changes. The
 default thresholds and weights are heuristic: a `consistent` result cannot
 establish authenticity, damage alone is not fraud, segmentation errors can affect scores,
-and a homography is only an approximation for a non-planar object. Segmentation
+and rectangle normalization is only a coarse shape alignment. It can include
+visible sidewalls and cannot establish correspondence across arbitrary 3D views. Segmentation
 can omit transparent, reflective or damaged parts and requires inspection. Real products
 need controlled capture and genuine/defective/counterfeit evaluation data.
 
@@ -239,7 +263,8 @@ ruff format --check backend
 ```
 
 Unit/HTTP contract tests inject deterministic test features and do **not**
-download models. They also exercise real patch-distance math, MAGSAC++, masked keypoints,
+download models. They also exercise real patch-distance math, rectangle/perspective warping, quarter-turn orientation selection,
+feature-mode MAGSAC++, masked keypoints,
 foreground coverage, upload validation, auth, CORS, persistence, partial batches and PNG generation.
 For a real-model HTTP smoke test, start the server and run:
 
@@ -257,7 +282,21 @@ correctly. Use `--local-backend sift` to exercise the fallback. Repeat
 `--reference` to enroll several views, use `--repeat 2` for cold/warm comparisons,
 and `--output-dir backend/.runtime/smoke` to save every returned PNG and JSON.
 
-### Small-model benchmark (current default)
+### Rectangle alignment HTTP smoke test (current default)
+
+Tested on Apple M4 with a small product reference and a separate table photo of
+an object, including 90° and 180° rotations of the query. All six HTTP requests
+applied rectangle alignment and returned decodable diagnostic/discrepancy PNGs.
+The selected orientations kept the object upright relative to the reference.
+Warm end-to-end processing took **390–418 ms**; the first request with cached
+weights took **1.48 s**. The default path never initialized ALIKED/LightGlue.
+
+This demonstrates coarse outline normalization and API behavior; it does not
+validate pixel correspondence or authenticity accuracy. Recorded stage timings
+are in [`benchmarks/rectangle-alignment.json`](benchmarks/rectangle-alignment.json).
+Source photos supplied for this test are not committed.
+
+### Small-model benchmark (previous feature-alignment version)
 
 On Apple M4, CPU execution, four threads, eight real photos (three phones, two
 bottles, a cable, a metal nut, and a circuit board), two warm runs per photo:
@@ -273,6 +312,8 @@ features are still cached; the uploaded query is segmented once per request.
 
 The same real-photo rotation/scale HTTP control below took **1.47 seconds warm**
 with U2Netp (~110 ms segmentation), versus 6.57 seconds previously with BiRefNet.
+Those full-pipeline numbers used the previous feature-based alignment; the
+segmentation-only comparison is independent of the new rectangle path.
 All diagnostic PNGs were fetched and decoded. This tests alignment on a transformed
 reference, not authenticity accuracy on independent photos.
 

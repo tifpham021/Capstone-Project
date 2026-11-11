@@ -58,6 +58,15 @@ class GeometryResult(BaseModel):
     foreground_iou: float | None = None
     reference_index: int = 0
     references_attempted: int = 0
+    alignment_method: str = "features"
+    alignment_quality: str = "unknown"
+    rotation_degrees: int = 0
+    orientation_score: float | None = None
+    reference_corners: list[list[float]] | None = None
+    query_corners: list[list[float]] | None = None
+    reference_transform: list[list[float]] | None = None
+    query_transform: list[list[float]] | None = None
+    canvas_size: list[int] | None = None
 
 
 class SegmentationResult(BaseModel):

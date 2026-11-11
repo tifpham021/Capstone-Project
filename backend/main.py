@@ -57,8 +57,8 @@ def create_app(settings: Settings | None = None, service=None) -> FastAPI:
     settings = settings or Settings.from_env()
     app = FastAPI(
         title="ReturnScan CV Backend",
-        version="1.1.0",
-        description="DINOv2 retrieval, PatchCore-style discrepancies and ALIKED/LightGlue geometry. Scores are not calibrated authenticity probabilities.",
+        version="1.2.0",
+        description="DINOv2 retrieval, foreground rectangle alignment and PatchCore-style discrepancies. Feature alignment is optional. Scores are not calibrated authenticity probabilities.",
     )
     app.state.verifier = service if service is not None else VerificationService(settings)
     app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_request_bytes)
@@ -93,6 +93,7 @@ def create_app(settings: Settings | None = None, service=None) -> FastAPI:
             "status": "ok",
             "models_loaded": app.state.verifier.loaded,
             "device": str(app.state.verifier.models.device),
+            "alignment_method": settings.alignment_method,
             "authentication_enabled": bool(settings.api_key),
         }
 
@@ -136,7 +137,9 @@ def create_app(settings: Settings | None = None, service=None) -> FastAPI:
         file: Annotated[UploadFile, File(description="One JPEG, PNG or WebP photo")],
         expected_product_id: Annotated[str | None, Form(max_length=64)] = None,
         barcode: Annotated[str | None, Form(max_length=128)] = None,
-        local_backend: Annotated[LocalBackend, Form()] = "auto",
+        local_backend: Annotated[
+            LocalBackend, Form(description="Only used with RETURNSCAN_ALIGNMENT_METHOD=features")
+        ] = "auto",
     ):
         data = await read_upload(file, settings)
         return await run_in_threadpool(
@@ -154,7 +157,9 @@ def create_app(settings: Settings | None = None, service=None) -> FastAPI:
         ],
         expected_product_id: Annotated[str | None, Form(max_length=64)] = None,
         barcode: Annotated[str | None, Form(max_length=128)] = None,
-        local_backend: Annotated[LocalBackend, Form()] = "auto",
+        local_backend: Annotated[
+            LocalBackend, Form(description="Only used with RETURNSCAN_ALIGNMENT_METHOD=features")
+        ] = "auto",
     ):
         try:
             if not 1 <= len(files) <= settings.max_batch_images:

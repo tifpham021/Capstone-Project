@@ -19,7 +19,7 @@ Open <http://127.0.0.1:8000/docs> for interactive upload forms and the exact JSO
 schemas. `/openapi.json` exposes the machine-readable contract. Startup does not
 download weights. The first verification loads the pinned DINOv2 source and
 pretrained weights, builds the reference index, and initializes local matching.
-That request also downloads the BiRefNet Lite foreground model (~224 MB) and is slower.
+That request also downloads the small U2Netp foreground model (~4.6 MB) and is slower.
 Internet access is needed for uncached weights; subsequent requests reuse caches.
 
 `RETURNSCAN_DEVICE=auto` chooses CUDA, then Apple Metal/MPS, then CPU. On an M4,
@@ -151,7 +151,8 @@ does not validate the React app's OAuth session or perform refund decisions.
 
 ## How it works
 
-1. Local `rembg` + **BiRefNet General Lite** segments the object in each photo.
+1. Local `rembg` + **U2Netp** (the small U²-Net model) segments each photo at
+   320×320 on CPU. BiRefNet Lite remains an optional higher-resolution alternative.
    Threshold the mask, crop with a small margin, and replace background with white.
    Keep all foreground components so detached pieces are not deliberately discarded.
    Cache reference cutouts, masks and DINO brightness variants in memory. ALIKED
@@ -198,9 +199,11 @@ See [`.env.example`](.env.example). Export variables or use
 - `RETURNSCAN_DATA_DIR`: catalog, normalized references, results and default model
   cache. Defaults to `backend/.runtime`, excluded from Git.
 - `RETURNSCAN_DEVICE`: `auto`, `cpu`, `mps`, `cuda` (PyTorch models).
-- `RETURNSCAN_SEGMENTATION_MODEL`: defaults to `birefnet-general-lite`.
-  `isnet-general-use` is an alternative local model; changing it rebuilds masks
+- `RETURNSCAN_SEGMENTATION_MODEL`: defaults to `u2netp` (320×320, ~4.6 MB).
+  Set `birefnet-general-lite` for the previous 1024×1024 model (~224 MB), or
+  `isnet-general-use` for another alternative. Changing it rebuilds reference masks
   on restart and needs new validation. Segmentation runs on ONNX CPU.
+  Existing `.env` files with the old model name override the new default.
   Weights are cached in the configured model cache under `segmentation/`.
 - `RETURNSCAN_API_KEY`: optional shared key for all data/image routes. Leave empty
   only for local development. Health/docs remain public.
@@ -254,7 +257,47 @@ correctly. Use `--local-backend sift` to exercise the fallback. Repeat
 `--reference` to enroll several views, use `--repeat 2` for cold/warm comparisons,
 and `--output-dir backend/.runtime/smoke` to save every returned PNG and JSON.
 
-### Measured local smoke test
+### Small-model benchmark (current default)
+
+On Apple M4, CPU execution, four threads, eight real photos (three phones, two
+bottles, a cable, a metal nut, and a circuit board), two warm runs per photo:
+
+| Model | Input | Checkpoint | Median segmentation time |
+| --- | --- | --- | --- |
+| U2Netp (default) | 320×320 | 4.6 MB | 106 ms |
+| BiRefNet General Lite | 1024×1024 | 224 MB | 3,960 ms |
+
+Times include preprocessing, model inference, thresholding and cropping. U2Netp
+was about **37× faster** on this small sample. Foreground reference masks and
+features are still cached; the uploaded query is segmented once per request.
+
+The same real-photo rotation/scale HTTP control below took **1.47 seconds warm**
+with U2Netp (~110 ms segmentation), versus 6.57 seconds previously with BiRefNet.
+All diagnostic PNGs were fetched and decoded. This tests alignment on a transformed
+reference, not authenticity accuracy on independent photos.
+
+Visual inspection: phone and circuit-board masks broadly agree. U2Netp preserves
+more of the glass-bottle rim, but misses the cable's outer jacket and fills the
+metal nut's hole. Neither model is ground truth; keep BiRefNet available for
+products where the small model removes important parts. Mask validity only checks
+for an adequately sized foreground; it does not guarantee a correct segmentation.
+Recorded measurements are in [`benchmarks/segmentation-models.json`](benchmarks/segmentation-models.json).
+
+Reproduce on your own images, with local mask overlays and cutouts for review:
+
+```bash
+python -m backend.benchmark_segmentation \
+  --image /path/to/phone.jpg \
+  --image /path/to/another-product.jpg \
+  --repeat 3 \
+  --output-dir backend/.runtime/segmentation-comparison
+```
+
+This compares `u2netp` with `birefnet-general-lite`; `--models` accepts other
+rembg model names. The JSON includes image hashes, individual timings and mask
+agreement. Agreement between models is **not** segmentation accuracy.
+
+### Previous BiRefNet Lite smoke test
 
 On an Apple M4 laptop, using MPS for DINO and CPU for BiRefNet Lite and
 ALIKED/LightGlue, one catalog product and one cached reference:
@@ -283,7 +326,8 @@ in [`benchmarks/alignment-smoke.json`](benchmarks/alignment-smoke.json).
 - [ALIKED](https://github.com/Shiaoming/ALIKED), BSD-3-Clause.
 - [PatchCore paper](https://arxiv.org/abs/2106.08265).
 - [rembg](https://github.com/danielgatis/rembg), MIT wrapper; model licenses are separate.
-- [BiRefNet](https://github.com/ZhengPeng7/BiRefNet), MIT.
+- [U²-Net / U2Netp](https://github.com/xuebinqin/U-2-Net), Apache-2.0.
+- [BiRefNet](https://github.com/ZhengPeng7/BiRefNet), MIT (optional model).
 - [OpenCV USAC / MAGSAC++](https://docs.opencv.org/4.x/de/d3e/tutorial_usac.html).
 - [RANSAC paper](https://doi.org/10.1145/358669.358692).
 

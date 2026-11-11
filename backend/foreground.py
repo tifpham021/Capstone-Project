@@ -52,7 +52,7 @@ class ForegroundSegmenter:
         self.settings = settings
         self.session = None
 
-    def prepare(self, image: Image.Image) -> Foreground:
+    def predict_mask(self, image: Image.Image) -> np.ndarray:
         from rembg import new_session, remove
 
         if self.session is None:
@@ -64,4 +64,7 @@ class ForegroundSegmenter:
                 self.settings.segmentation_model, providers=["CPUExecutionProvider"]
             )
         mask = remove(image, session=self.session, only_mask=True)
-        return crop_foreground(image, np.asarray(mask.convert("L")))
+        return np.asarray(mask.convert("L"))
+
+    def prepare(self, image: Image.Image) -> Foreground:
+        return crop_foreground(image, self.predict_mask(image))

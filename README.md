@@ -28,7 +28,7 @@ Open the local URL printed in the terminal. Vite typically uses [http://localhos
 
 The Python/FastAPI service lives in [`backend/`](backend/README.md). It supports
 genuine-reference enrollment, one-image or batch verification, and discrepancy
-images. BiRefNet Lite removes backgrounds; masked ALIKED + LightGlue and OpenCV
+images. Small U2Netp removes backgrounds; masked ALIKED + LightGlue and OpenCV
 MAGSAC++ align the closest reference view. Frozen DINOv2 ViT-S/14 supplies retrieval
 and foreground-only PatchCore-style patch comparisons, with a SIFT fallback. Apple Silicon, CUDA and CPU are
 supported. Model weights download on the first verification request.

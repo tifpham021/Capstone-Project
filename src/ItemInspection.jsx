@@ -130,6 +130,7 @@ function ItemInspection({ returnCase, onServerUpdate, onNoteChange, onBack, onCo
   const [weightInput, setWeightInput] = useState('')
   const [savingWeight, setSavingWeight] = useState(false)
   const [aiStatus, setAiStatus] = useState('')
+  const [aiRunning, setAiRunning] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [photoMode, setPhotoMode] = useState(null)
   const [cameraError, setCameraError] = useState('')
@@ -246,6 +247,7 @@ function ItemInspection({ returnCase, onServerUpdate, onNoteChange, onBack, onCo
 
     if (!returnCase.productId) return
     setAiStatus('Running the AI visual comparison… The first run after the server starts can take a minute.')
+    setAiRunning(true)
     try {
       const result = await verifyPhoto(file, returnCase.productId)
       await attachVerification(returnCase.id, result.request_id)
@@ -257,6 +259,8 @@ function ItemInspection({ returnCase, onServerUpdate, onNoteChange, onBack, onCo
           ? 'AI comparison skipped: this product has no reference photos enrolled yet.'
           : `AI comparison unavailable: ${error.message}`,
       )
+    } finally {
+      setAiRunning(false)
     }
   }
 
@@ -290,6 +294,11 @@ function ItemInspection({ returnCase, onServerUpdate, onNoteChange, onBack, onCo
   }
 
   const handleContinue = async () => {
+    // Leaving now would drop the result before it is attached to the return.
+    if (aiRunning) {
+      setFeedback('Wait for the AI visual comparison to finish before continuing.')
+      return
+    }
     const error = await onContinue()
     if (error) setFeedback(error)
   }
@@ -556,7 +565,7 @@ function ItemInspection({ returnCase, onServerUpdate, onNoteChange, onBack, onCo
           >
             Save for later
           </button>
-          <button type="button" className="continue-button" onClick={handleContinue}>
+          <button type="button" className="continue-button" onClick={handleContinue} disabled={aiRunning}>
             Continue to review
             <img src={continueArrow} alt="" />
           </button>

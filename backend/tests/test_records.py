@@ -214,8 +214,10 @@ def test_dates_come_back_in_utc(client):
 
 def test_seed_is_idempotent(tmp_path):
     settings = Settings(data_dir=tmp_path)
-    assert seed(settings) == ["ORD-8921", "ORD-9004"]
+    assert seed(settings) == ["ORD-8921", "ORD-9004", "ORD-1032"]
     assert seed(settings) == []
     with create_session_factory(settings)() as db:
         photos = db.get(Order, "ORD-8921").items[0].images
         assert len(photos) == 1 and (tmp_path / photos[0].file_path).is_file()
+        bottle = db.get(Order, "ORD-1032").items[0]
+        assert bottle.product_id == "owala-freesip-32-hot-pink" and len(bottle.images) == 1

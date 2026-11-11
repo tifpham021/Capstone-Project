@@ -268,7 +268,7 @@
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: fill;
+  object-fit: contain;
 }
 
 .image-label {
@@ -878,6 +878,11 @@
 .continue-button img {
   width: 8px;
   height: 14px;
+}
+
+.continue-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 @media (max-width: 1180px) {

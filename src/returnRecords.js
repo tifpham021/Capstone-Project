@@ -134,8 +134,11 @@ export function evidenceSignals(returnCase) {
       key: 'visual',
       title: 'Visual match',
       label: 'Visual match (AI)',
+      // An inconclusive comparison's score is informational only (backend README).
       detail: verification
-        ? `${Math.round(verification.confidence * 100)}% visual match — ${verification.decision}`
+        ? verification.decision === 'inconclusive'
+          ? 'Inconclusive: views could not be aligned. Retake a photo closer to a reference angle.'
+          : `${Math.round(verification.confidence * 100)}% visual match — ${verification.decision}`
         : !returnCase.productId
           ? 'Product is not linked to the AI catalog'
           : photos

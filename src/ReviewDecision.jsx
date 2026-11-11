@@ -119,7 +119,11 @@ function ReviewDecision({ returnCase, onIdentify, onBack, onSubmitDecision, revi
   const savedSignals = saved ? evidenceSignals(returnCase) : null
   const advice = saved ? recommendation(savedSignals) : null
   const verification = saved ? latest(returnCase.verifications) : null
-  const confidence = saved ? (verification ? Math.round(verification.confidence * 100) : null) : 86
+  // An inconclusive comparison's score is informational only, so it isn't shown.
+  const inconclusive = verification?.decision === 'inconclusive'
+  const confidence = saved
+    ? (verification && !inconclusive ? Math.round(verification.confidence * 100) : null)
+    : 86
   const signalRows = saved
     ? savedSignals.map((signal) => [
       signal.label,
@@ -172,7 +176,7 @@ function ReviewDecision({ returnCase, onIdentify, onBack, onSubmitDecision, revi
               </div>
               <div className="confidence-score">
                 <strong>{confidence === null ? '—' : `${confidence}%`}</strong>
-                <span>{confidence === null ? 'No AI result yet' : 'Visual match'}</span>
+                <span>{confidence !== null ? 'Visual match' : inconclusive ? 'AI inconclusive' : 'No AI result yet'}</span>
                 <i><b style={{ width: `${confidence || 0}%` }} /></i>
               </div>
             </section>

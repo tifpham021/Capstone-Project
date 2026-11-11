@@ -224,11 +224,11 @@ photos or user-specific paths are committed to this repository.
 
 ## Automatic Raspberry Pi camera verification
 
-The backend can own both CSI cameras and run the existing verification algorithm
-when **both views stay still for two seconds**. It processes the initial settled
+The backend can own one or two CSI cameras and run the existing verification algorithm
+when **all available views stay still for two seconds**. It processes the initial settled
 scene once, then requires sustained motion (0.3 seconds) before another scan.
 Small blurred grayscale previews detect motion; the matching algorithm receives
-1280×960 JPEGs from both cameras. Captures are close in time, not hardware synchronized.
+1280×960 JPEGs from each active camera. Captures are close in time, not hardware synchronized.
 Camera capture continues during inference; inference runs sequentially in one
 background worker, without an accumulating queue. A scene changed during processing
 is checked again after the worker is available and the views settle.
@@ -254,7 +254,7 @@ before enabling this mode. Use exactly one server worker and avoid reload mode.
 Poll `GET /v1/cameras/status` (with `X-API-Key` if configured) for `status`, camera
 errors, and `latest.results`, containing each camera ID and its normal verification
 response or error. Successful results retain the existing persisted result/image
-URLs. The latest two-view summary stays in memory; it resets on server restart.
+URLs. The latest scan summary stays in memory; it resets on server restart.
 Camera initialization failure is reported here while upload endpoints remain usable.
 This endpoint does not expose a live camera preview.
 
@@ -322,7 +322,7 @@ Run the model-free image tests and injected-model API tests with:
 backend/.venv/bin/python -m unittest backend.tests.test_visualization backend.tests.test_normalized_results -v
 ```
 
-The inspection page's **Scan item** button requests new pictures from both Pi
+The inspection page's **Scan item** button requests new pictures from the available Pi
 cameras, follows a scan ID, and displays independent per-view scores, decisions,
 alignment checks and marked discrepancy images. The review page retains those
 results for the active case while the app is open. Camera results are compared
@@ -348,7 +348,9 @@ npm run dev -- --host 127.0.0.1
 Open http://127.0.0.1:5173 on the Pi, open an item's inspection screen, and press
 **Scan item**. `RETURNSCAN_CAMERA_AUTO_SCAN=1` retains automatic stillness scans;
 a button request returns 409 if another verification is already processing.
-Both cameras must initialize successfully. Images are captured close in time,
+At least one configured camera must initialize successfully; unavailable cameras
+are skipped automatically. Set `RETURNSCAN_CAMERA_IDS=0` to use one camera explicitly.
+The status endpoint reports only active camera IDs. Images are captured close in time,
 without hardware synchronization. Inconclusive results remain visibly
 inconclusive, and partial per-camera failures do not hide successful views.
 

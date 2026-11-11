@@ -57,7 +57,7 @@ export default function ItemInspection({ returnCase, onBack, onContinue, scan, o
           <span>Identify return → Inspect item → Review decision</span>
         </nav>
         <section className="inspection-intro">
-          <div><h1>Inspect the returned item</h1><p>Capture both station cameras and compare against enrolled product references.</p></div>
+          <div><h1>Inspect the returned item</h1><p>Capture available station cameras and compare against enrolled product references.</p></div>
           <div><strong>{returnCase.id}</strong><p>{returnCase.productName}</p></div>
         </section>
         <section className="scan-panel" aria-labelledby="scan-heading" aria-busy={busy}>
@@ -67,7 +67,7 @@ export default function ItemInspection({ returnCase, onBack, onContinue, scan, o
               {busy ? 'Scanning…' : scan?.results ? 'Scan again' : 'Scan item'}
             </button>
           </div>
-          <p role="status" aria-live="polite">{submitting ? 'Requesting fresh camera captures…' : pending ? 'Capturing and comparing both views. Results will appear automatically.' : scan?.status === 'complete' ? 'Scan finished. Review both camera results below.' : 'Ready to scan.'}</p>
+          <p role="status" aria-live="polite">{submitting ? 'Requesting fresh camera captures…' : pending ? 'Capturing and comparing camera views. Results will appear automatically.' : scan?.status === 'complete' ? 'Scan finished. Review camera results below.' : 'Ready to scan.'}</p>
           {(error || scan?.error) && <p className="scan-error" role="alert">{error || scan.error}</p>}
           <ScanResults scan={scan} />
         </section>

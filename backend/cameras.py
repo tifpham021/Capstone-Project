@@ -1,4 +1,4 @@
-"""Opt-in, two-camera stillness capture using Raspberry Pi's Picamera2."""
+"""Opt-in stillness capture from one or two Raspberry Pi cameras."""
 from __future__ import annotations
 
 import copy
@@ -45,8 +45,8 @@ class CameraMonitor:
     def __init__(self, verifier):
         self.verifier = verifier
         self.ids = tuple(int(x) for x in os.getenv("RETURNSCAN_CAMERA_IDS", "0,1").split(","))
-        if len(self.ids) != 2 or len(set(self.ids)) != 2 or min(self.ids) < 0:
-            raise ValueError("RETURNSCAN_CAMERA_IDS must contain two distinct nonnegative IDs")
+        if not 1 <= len(self.ids) <= 2 or len(set(self.ids)) != len(self.ids) or min(self.ids) < 0:
+            raise ValueError("RETURNSCAN_CAMERA_IDS must contain one or two distinct nonnegative IDs")
         self.settle = self._number("RETURNSCAN_CAMERA_SETTLE_SECONDS", 2.0)
         self.interval = self._number("RETURNSCAN_CAMERA_INTERVAL_SECONDS", 0.2)
         self.fraction = self._number("RETURNSCAN_CAMERA_MOTION_FRACTION", 0.015)
@@ -138,13 +138,31 @@ class CameraMonitor:
             import cv2
             from picamera2 import Picamera2
 
+            active_ids = []
+            failures = []
             for camera_id in self.ids:
-                camera = Picamera2(camera_id)
+                camera = None
+                try:
+                    camera = Picamera2(camera_id)
+                    camera.configure(camera.create_video_configuration(
+                        main={"size": (1280, 960), "format": "RGB888"},
+                        controls={"FrameRate": 10}, buffer_count=4, queue=False))
+                    camera.start()
+                except Exception as exc:
+                    LOG.warning("Camera %s unavailable: %s", camera_id, exc)
+                    failures.append(f"Camera {camera_id}: {exc}")
+                    if camera is not None:
+                        try:
+                            camera.close()
+                        except Exception:
+                            LOG.exception("Camera cleanup failed")
+                    continue
                 cameras.append(camera)
-                camera.configure(camera.create_video_configuration(
-                    main={"size": (1280, 960), "format": "RGB888"},
-                    controls={"FrameRate": 10}, buffer_count=4, queue=False))
-                camera.start()
+                active_ids.append(camera_id)
+            self.ids = tuple(active_ids)
+            self._set(camera_ids=self.ids)
+            if not cameras:
+                raise RuntimeError("No configured cameras could be started. " + "; ".join(failures))
             # Allow auto-exposure/white balance to converge before detecting stillness.
             if self.stop_event.wait(2):
                 return

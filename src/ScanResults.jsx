@@ -18,7 +18,7 @@ function ResultImage({ path, label }) {
 }
 
 export default function ScanResults({ scan }) {
-  if (!scan?.results) return <p className="scan-empty">No scan results yet. Place the item under both cameras and press Scan item.</p>
+  if (!scan?.results) return <p className="scan-empty">No scan results yet. Place the item in view of the cameras and press Scan item.</p>
   return (
     <div className="scan-results">
       <p>Captured {new Date(scan.captured_at * 1000).toLocaleString()}. Each camera is compared independently with enrolled references.</p>

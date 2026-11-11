@@ -8,7 +8,7 @@ import time
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import cv2
 import numpy as np
@@ -71,6 +71,31 @@ class CameraScanTests(unittest.TestCase):
             self.assertEqual(asyncio.run(request(app, "GET", "/v1/cameras/scans/missing", "test-key"))[0], 404)
 
     def test_fresh_two_camera_capture_and_single_inference(self):
+        self.check_camera_capture("0,1", [0, 1])
+
+    def test_explicit_single_camera_capture(self):
+        self.check_camera_capture("1", [1])
+
+    def test_single_camera_fallback(self):
+        for unavailable in (0, 1):
+            with self.subTest(unavailable=unavailable):
+                self.check_camera_capture("0,1", [1 - unavailable], unavailable=unavailable)
+
+    def test_no_available_cameras(self):
+        with patch.dict(os.environ, {"RETURNSCAN_CAMERA_IDS": "0,1"}), patch.dict(
+            'sys.modules', {"picamera2": types.SimpleNamespace(
+                Picamera2=Mock(side_effect=RuntimeError("unavailable")))}
+        ):
+            monitor = CameraMonitor(object())
+            with self.assertLogs("backend.cameras", level="WARNING"):
+                monitor._run()
+            self.assertEqual(monitor.snapshot()["status"], "error")
+            self.assertEqual(monitor.snapshot()["camera_ids"], ())
+            with self.assertRaises(ServiceError) as error:
+                monitor.request_scan()
+            self.assertEqual(error.exception.status_code, 503)
+
+    def check_camera_capture(self, configured_ids, expected_ids, unavailable=None):
         entered = threading.Event()
         release = threading.Event()
         calls = []
@@ -89,7 +114,8 @@ class CameraScanTests(unittest.TestCase):
                 pass
 
             def start(self):
-                pass
+                if self.number == unavailable:
+                    raise RuntimeError("unavailable")
 
             def capture_array(self, stream):
                 return np.full((96, 128, 3), 40 + 80 * self.number, dtype=np.uint8)
@@ -104,13 +130,14 @@ class CameraScanTests(unittest.TestCase):
                 release.wait(5)
                 return {"request_id": str(len(calls))}
 
-        with patch.dict(os.environ, {"RETURNSCAN_CAMERA_AUTO_SCAN": "0", "RETURNSCAN_CAMERA_INTERVAL_SECONDS": "0.02"}), patch.dict('sys.modules', {"picamera2": types.SimpleNamespace(Picamera2=Camera)}):
+        with patch.dict(os.environ, {"RETURNSCAN_CAMERA_IDS": configured_ids, "RETURNSCAN_CAMERA_AUTO_SCAN": "0", "RETURNSCAN_CAMERA_INTERVAL_SECONDS": "0.02"}), patch.dict('sys.modules', {"picamera2": types.SimpleNamespace(Picamera2=Camera)}):
             monitor = CameraMonitor(Verifier())
             monitor.start()
             try:
                 deadline = time.monotonic() + 8
                 while monitor.snapshot()["status"] == "starting" and time.monotonic() < deadline:
                     time.sleep(0.02)
+                self.assertEqual(list(monitor.snapshot()["camera_ids"]), expected_ids)
                 job = monitor.request_scan()
                 self.assertTrue(entered.wait(5))
                 with self.assertRaises(ServiceError) as error:
@@ -121,10 +148,10 @@ class CameraScanTests(unittest.TestCase):
                     time.sleep(0.02)
                 result = monitor.scan_status(job["scan_id"])
                 self.assertEqual(result["status"], "complete")
-                self.assertEqual([v["camera_id"] for v in result["results"]], [0, 1])
-                self.assertEqual(len(calls), 2)
-                self.assertAlmostEqual(calls[0], 40, delta=2)
-                self.assertAlmostEqual(calls[1], 120, delta=2)
+                self.assertEqual([v["camera_id"] for v in result["results"]], expected_ids)
+                self.assertEqual(len(calls), len(expected_ids))
+                for value, camera_id in zip(calls, expected_ids):
+                    self.assertAlmostEqual(value, 40 + 80 * camera_id, delta=2)
             finally:
                 release.set()
                 monitor.stop()

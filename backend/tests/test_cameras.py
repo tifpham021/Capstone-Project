@@ -1,10 +1,21 @@
 """Camera state tests run without camera hardware, models or third-party packages."""
+import os
 import unittest
+from unittest.mock import patch
 
 from backend.cameras import CameraMonitor, StillnessGate
 
 
 class StillnessTests(unittest.TestCase):
+    def test_one_or_two_camera_ids(self):
+        for value, expected in (("0", (0,)), ("1", (1,)), ("0,1", (0, 1))):
+            with self.subTest(value=value), patch.dict(os.environ, {"RETURNSCAN_CAMERA_IDS": value}):
+                self.assertEqual(CameraMonitor(object()).ids, expected)
+        for value in ("", "-1", "0,0", "0,1,2"):
+            with self.subTest(value=value), patch.dict(os.environ, {"RETURNSCAN_CAMERA_IDS": value}):
+                with self.assertRaises(ValueError):
+                    CameraMonitor(object())
+
     def test_once_per_still_scene(self):
         gate = StillnessGate(settle_seconds=2)
         self.assertFalse(gate.update(False, 0))

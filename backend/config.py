@@ -12,6 +12,7 @@ class Settings:
     model_cache: Path | None = None
     dino_source: str | None = None
     segmentation_model: str = "u2netp"
+    alignment_method: str = "rectangle"
     api_key: str = ""
     cors_origins: tuple[str, ...] = ("http://localhost:5173", "http://127.0.0.1:5173")
     max_upload_bytes: int = 15 * 1024 * 1024
@@ -32,6 +33,7 @@ class Settings:
             else None,
             dino_source=os.getenv("RETURNSCAN_DINO_SOURCE") or None,
             segmentation_model=os.getenv("RETURNSCAN_SEGMENTATION_MODEL", cls().segmentation_model),
+            alignment_method=os.getenv("RETURNSCAN_ALIGNMENT_METHOD", cls().alignment_method),
             api_key=os.getenv("RETURNSCAN_API_KEY", ""),
             database_url=os.getenv("RETURNSCAN_DATABASE_URL", ""),
             cors_origins=tuple(

@@ -23,6 +23,7 @@ from backend.algorithms import (
     patch_distances,
     sift_match,
 )
+from backend.alignment import RectangleError, RectangleView, outline_rectangle, rectify_rectangle
 from backend.common import ServiceError, decode_image  # noqa: F401 (re-exported)
 from backend.config import Settings
 from backend.foreground import ForegroundSegmenter
@@ -37,6 +38,7 @@ IMAGE_ARTIFACTS = {
     "original.png",
     "foreground.png",
     "reference.png",
+    "reference-foreground.png",
     "aligned.png",
     "foreground-mask.png",
     "comparison-mask.png",
@@ -59,6 +61,8 @@ class Reference:
     mask: np.ndarray
     source_fraction: float
     local: object = None
+    rectangle: RectangleView | None = None
+    rectangle_features: Features | None = None
 
 
 @dataclass
@@ -153,6 +157,8 @@ class VerificationService:
 
     def __init__(self, settings: Settings, models=None, segmenter=None):
         self.settings = settings
+        if settings.alignment_method not in {"rectangle", "features"}:
+            raise ValueError("RETURNSCAN_ALIGNMENT_METHOD must be rectangle or features")
         self.settings.data_dir.mkdir(parents=True, exist_ok=True)
         self.catalog_path = self.settings.data_dir / "catalog.json"
         self.models = models if models is not None else Models(settings)
@@ -247,18 +253,101 @@ class VerificationService:
                     raise ServiceError(
                         "Reference foreground is too thin/small for patch comparison", 422
                     )
-                variants = [features] + [
-                    self.models.features(ImageEnhance.Brightness(image).enhance(factor), mask)
+                rectangle, rectangle_features = None, None
+                comparison_image, comparison_mask, base_features = image, mask, features
+                if self.settings.alignment_method == "rectangle":
+                    try:
+                        rectangle = rectify_rectangle(image, mask)
+                        rectangle_features = self.models.features(rectangle.image, rectangle.mask)
+                        comparison_image, comparison_mask = rectangle.image, rectangle.mask
+                        base_features = rectangle_features
+                    except RectangleError:
+                        LOG.warning("Reference has no usable foreground rectangle: %s", relative)
+                variants = [base_features] + [
+                    self.models.features(
+                        ImageEnhance.Brightness(comparison_image).enhance(factor), comparison_mask
+                    )
                     for factor in (0.90, 1.10)
                 ]
                 indexed.references.append(
                     Reference(
-                        product["id"], image, features, variants, mask, foreground.source_fraction
+                        product["id"],
+                        image,
+                        features,
+                        variants,
+                        mask,
+                        foreground.source_fraction,
+                        rectangle=rectangle,
+                        rectangle_features=rectangle_features,
                     )
                 )
             if not indexed.references:
                 raise ServiceError("Catalog product has no reference images", 503)
             self._index[product["id"]] = indexed
+
+    def _rectangle_alignment(self, image, mask, references):
+        """Choose a corner orientation using spatial DINO similarity, not feature-match counts."""
+        reason = "No usable reference/query rectangle"
+        attempted = 0
+        try:
+            outline = outline_rectangle(mask)
+            for ref in references:
+                attempted += 1
+                if ref.rectangle is None or ref.rectangle_features is None:
+                    continue
+                candidates = []
+                for turn in range(4):
+                    view = rectify_rectangle(
+                        image,
+                        mask,
+                        size=ref.rectangle.image.size,
+                        quarter_turns=turn,
+                        outline=outline,
+                    )
+                    features = self.models.features(view.image, view.mask)
+                    tokens = features.mask & ref.rectangle_features.mask
+                    if not bool(tokens.any()):
+                        continue
+                    appearance = float(
+                        (features.patches[tokens] * ref.rectangle_features.patches[tokens])
+                        .sum(-1)
+                        .mean()
+                        .cpu()
+                    )
+                    common = (view.mask > 0) & (ref.rectangle.mask > 0)
+                    union = (view.mask > 0) | (ref.rectangle.mask > 0)
+                    iou = int(common.sum()) / max(1, int(union.sum()))
+                    candidates.append((appearance + 0.03 * iou, view, common, union, iou))
+                if not candidates:
+                    continue
+                score, view, common, union, iou = max(
+                    candidates, key=lambda candidate: candidate[0]
+                )
+                if int(common.sum()) < 64:
+                    continue
+                differences = union & ~common
+                geometry = LocalMatch("rectangle", 0, 0, 0, 0, iou, None)
+                details = {
+                    "estimator": view.estimator,
+                    "rotation_degrees": view.rotation_degrees,
+                    "orientation_score": float(score),
+                    "reference_corners": ref.rectangle.corners.tolist(),
+                    "query_corners": view.corners.tolist(),
+                    "reference_transform": ref.rectangle.matrix.tolist(),
+                    "query_transform": view.matrix.tolist(),
+                    "canvas_size": list(view.image.size),
+                }
+                return (
+                    ref,
+                    geometry,
+                    (view.image, common.astype(np.uint8), True, iou, differences.astype(np.uint8)),
+                    details,
+                    attempted,
+                )
+        except RectangleError as exc:
+            reason = str(exc)
+        geometry = LocalMatch("rectangle", 0, 0, 0, 0, 0, None, rejection_reason=reason)
+        return references[0], geometry, (image, mask, False, None, None), {}, attempted
 
     def verify(self, image_bytes, *, expected_product_id=None, barcode=None, local_backend="auto"):
         if expected_product_id and barcode:
@@ -353,16 +442,69 @@ class VerificationService:
                 key=lambda r: float((query.global_feature * r.features.global_feature).sum().cpu()),
                 reverse=True,
             )
-            matches: list[tuple[Reference, LocalMatch]] = []
-            if local_backend != "sift":
-                try:
-                    query_local = self.models.local_features(image, query_mask)
-                    for ref in ordered_refs:
-                        if ref.local is None:
-                            ref.local = self.models.local_features(ref.image, ref.mask)
-                        geometry = self.models.match(
-                            ref.local, query_local, ref.image.size, ref.mask, query_mask, image.size
+            rectangle_details = {}
+            comparison_reference = None
+            if self.settings.alignment_method == "rectangle":
+                ref, geometry, alignment, rectangle_details, attempted = self._rectangle_alignment(
+                    image, query_mask, ordered_refs
+                )
+                aligned, valid, alignment_valid, mask_iou, silhouette = alignment
+                comparison_reference = (
+                    ref.rectangle.image if ref.rectangle is not None else ref.image
+                )
+                alignment_valid = alignment_valid and foreground.valid
+                rejection_reason = (
+                    None
+                    if alignment_valid
+                    else (
+                        foreground.reason
+                        or geometry.rejection_reason
+                        or "Rectangle alignment failed"
+                    )
+                )
+                if not alignment_valid:
+                    aligned, valid, silhouette = image, query_mask, None
+                warnings_list.append(
+                    "Rectangle alignment normalizes foreground outlines; internal feature correspondence is not verified."
+                )
+            else:
+                matches: list[tuple[Reference, LocalMatch]] = []
+                if local_backend != "sift":
+                    try:
+                        query_local = self.models.local_features(image, query_mask)
+                        for ref in ordered_refs:
+                            if ref.local is None:
+                                ref.local = self.models.local_features(ref.image, ref.mask)
+                            geometry = self.models.match(
+                                ref.local,
+                                query_local,
+                                ref.image.size,
+                                ref.mask,
+                                query_mask,
+                                image.size,
+                            )
+                            matches.append((ref, geometry))
+                            if (
+                                geometry.homography is not None
+                                and align_foreground(
+                                    image, geometry.homography, ref.image, query_mask, ref.mask
+                                )[2]
+                            ):
+                                break
+                    except Exception as exc:
+                        if local_backend == "aliked":
+                            raise ServiceError(
+                                "ALIKED/LightGlue failed. Retry with local_backend=sift or check model setup.",
+                                503,
+                            ) from exc
+                        LOG.warning("Falling back to SIFT", exc_info=True)
+                        matches = []
+                        warnings_list.append(
+                            "ALIKED/LightGlue unavailable; used SIFT + MAGSAC++ CPU fallback."
                         )
+                if not matches:
+                    for ref in ordered_refs:
+                        geometry = sift_match(ref.image, image, ref.mask, query_mask)
                         matches.append((ref, geometry))
                         if (
                             geometry.homography is not None
@@ -371,50 +513,32 @@ class VerificationService:
                             )[2]
                         ):
                             break
-                except Exception as exc:
-                    if local_backend == "aliked":
-                        raise ServiceError(
-                            "ALIKED/LightGlue failed. Retry with local_backend=sift or check model setup.",
-                            503,
-                        ) from exc
-                    LOG.warning("Falling back to SIFT", exc_info=True)
-                    matches = []
-                    warnings_list.append(
-                        "ALIKED/LightGlue unavailable; used SIFT + MAGSAC++ CPU fallback."
+                evaluated = [
+                    (
+                        ref,
+                        match,
+                        align_foreground(image, match.homography, ref.image, query_mask, ref.mask),
                     )
-            if not matches:
-                for ref in ordered_refs:
-                    geometry = sift_match(ref.image, image, ref.mask, query_mask)
-                    matches.append((ref, geometry))
-                    if (
-                        geometry.homography is not None
-                        and align_foreground(
-                            image, geometry.homography, ref.image, query_mask, ref.mask
-                        )[2]
-                    ):
-                        break
-            evaluated = [
-                (
-                    ref,
-                    match,
-                    align_foreground(image, match.homography, ref.image, query_mask, ref.mask),
+                    for ref, match in matches
+                ]
+                ref, geometry, alignment = max(
+                    evaluated, key=lambda item: (item[2][2], item[1].score)
                 )
-                for ref, match in matches
-            ]
-            ref, geometry, alignment = max(evaluated, key=lambda item: (item[2][2], item[1].score))
-            aligned, valid, alignment_valid, mask_iou, silhouette = alignment
-            alignment_valid = alignment_valid and foreground.valid
-            rejection_reason = (
-                None
-                if alignment_valid
-                else (
-                    foreground.reason
-                    or geometry.rejection_reason
-                    or "Warp failed foreground visibility/overlap checks"
+                aligned, valid, alignment_valid, mask_iou, silhouette = alignment
+                alignment_valid = alignment_valid and foreground.valid
+                rejection_reason = (
+                    None
+                    if alignment_valid
+                    else (
+                        foreground.reason
+                        or geometry.rejection_reason
+                        or "Warp failed foreground visibility/overlap checks"
+                    )
                 )
-            )
-            if not alignment_valid:
-                aligned, valid, silhouette = image, query_mask, None
+                if not alignment_valid:
+                    aligned, valid, silhouette = image, query_mask, None
+                attempted = len(matches)
+                comparison_reference = ref.image
             geometry_done = time.perf_counter()
             aligned_features = self.models.features(aligned, valid)
             if not bool(aligned_features.mask.any()):
@@ -440,6 +564,10 @@ class VerificationService:
                 identity_consistent,
                 thresholds,
             )
+            if decision == "consistent" and self.settings.alignment_method == "rectangle":
+                reasons = [
+                    "Identity and local appearance meet the demo thresholds after rectangle normalization."
+                ]
             if identity_ambiguous:
                 warnings_list.append(
                     "Top catalog products are visually ambiguous; the score cannot resolve SKU identity."
@@ -451,7 +579,7 @@ class VerificationService:
                     ]
             if not alignment_valid:
                 warnings_list.append(
-                    "No reliable homography. Pose-independent PatchCore is informational; decision is inconclusive."
+                    "Alignment could not be applied. Pose-independent PatchCore is informational; decision is inconclusive."
                 )
             if (
                 alignment_valid
@@ -479,7 +607,7 @@ class VerificationService:
                 heat = np.maximum(heat, np.where(silhouette_patches > 0.25, 0.8, 0))
                 display_valid = valid | silhouette
             discrepancy, heatmap, regions = render_discrepancies(
-                ref.image,
+                comparison_reference,
                 aligned,
                 display_valid,
                 heat,
@@ -491,11 +619,13 @@ class VerificationService:
             diagnostics = {
                 "original": original,
                 "foreground": image,
-                "reference": ref.image,
-                "aligned": aligned,
+                "reference": comparison_reference,
+                "reference-foreground": ref.image,
                 "foreground-mask": Image.fromarray(query_mask * 255),
                 "comparison-mask": Image.fromarray(valid * 255),
             }
+            if alignment_valid:
+                diagnostics["aligned"] = aligned
             for label, diagnostic in diagnostics.items():
                 diagnostic.save(destination / f"{label}.png")
             rendered = time.perf_counter()
@@ -519,13 +649,20 @@ class VerificationService:
                     "coverage": geometry.coverage,
                     "score": geometry.score,
                     "alignment_valid": alignment_valid,
-                    "estimator": "USAC_MAGSAC",
+                    "estimator": "USAC_MAGSAC"
+                    if self.settings.alignment_method == "features"
+                    else rectangle_details.get("estimator", "rectangle"),
+                    "alignment_method": self.settings.alignment_method,
+                    "alignment_quality": "outline_only"
+                    if alignment_valid and self.settings.alignment_method == "rectangle"
+                    else ("feature_verified" if alignment_valid else "failed"),
                     "query_coverage": geometry.query_coverage,
                     "median_reprojection_error": geometry.median_reprojection_error,
                     "rejection_reason": rejection_reason,
                     "foreground_iou": mask_iou,
                     "reference_index": next(i for i, r in enumerate(target.references) if r is ref),
-                    "references_attempted": len(matches),
+                    "references_attempted": attempted,
+                    **rectangle_details,
                 },
                 segmentation={
                     "model": self.settings.segmentation_model,

@@ -62,7 +62,7 @@ class FakeModels:
 
 @pytest.fixture
 def configured(tmp_path):
-    settings = Settings(data_dir=tmp_path)
+    settings = Settings(data_dir=tmp_path, alignment_method="features")
     service = VerificationService(settings, models=FakeModels(), segmenter=FakeSegmenter())
     with TestClient(create_app(settings, service=service)) as client:
         yield settings, service, client
@@ -293,6 +293,7 @@ def test_failed_alignment_is_not_an_authenticity_decision(configured):
     assert response["decision"] == "inconclusive"
     assert not response["geometry"]["alignment_valid"]
     assert response["patchcore"]["method"] == "unaligned_nearest_neighbor"
+    assert "aligned" not in response["diagnostic_image_urls"]
 
 
 def test_auto_fallback_and_forced_aliked_error(configured, monkeypatch):

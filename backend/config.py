@@ -11,6 +11,7 @@ class Settings:
     device: str = "auto"
     model_cache: Path | None = None
     dino_source: str | None = None
+    segmentation_model: str = "birefnet-general-lite"
     api_key: str = ""
     cors_origins: tuple[str, ...] = ("http://localhost:5173", "http://127.0.0.1:5173")
     max_upload_bytes: int = 15 * 1024 * 1024
@@ -27,6 +28,7 @@ class Settings:
             if os.getenv("RETURNSCAN_MODEL_CACHE")
             else None,
             dino_source=os.getenv("RETURNSCAN_DINO_SOURCE") or None,
+            segmentation_model=os.getenv("RETURNSCAN_SEGMENTATION_MODEL", "birefnet-general-lite"),
             api_key=os.getenv("RETURNSCAN_API_KEY", ""),
             cors_origins=tuple(
                 filter(

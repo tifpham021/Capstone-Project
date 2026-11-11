@@ -6,7 +6,7 @@ backend for the CV proof of concept, **not a validated counterfeit detector**.
 
 ## Run
 
-From the repository root, use Python 3.11+:
+From the repository root, use Python 3.11–3.13 (supported by the pinned rembg release):
 
 ```bash
 python3 -m venv backend/.venv
@@ -19,10 +19,12 @@ Open <http://127.0.0.1:8000/docs> for interactive upload forms and the exact JSO
 schemas. `/openapi.json` exposes the machine-readable contract. Startup does not
 download weights. The first verification loads the pinned DINOv2 source and
 pretrained weights, builds the reference index, and initializes local matching.
-That request is slower and needs internet access; subsequent requests reuse caches.
+That request also downloads the BiRefNet Lite foreground model (~224 MB) and is slower.
+Internet access is needed for uncached weights; subsequent requests reuse caches.
 
 `RETURNSCAN_DEVICE=auto` chooses CUDA, then Apple Metal/MPS, then CPU. On an M4,
-DINOv2/PatchCore uses MPS when available; ALIKED/LightGlue uses CPU for portability.
+DINOv2/PatchCore uses MPS when available; ALIKED/LightGlue and ONNX foreground
+segmentation use CPU for portability.
 To force CPU, prefix the command with `RETURNSCAN_DEVICE=cpu`.
 
 Use **one worker**: model state and JSON catalog writes are serialized within one
@@ -85,13 +87,25 @@ The response includes:
 - `identified_product`, `compared_product`, `identity_consistent`,
   `identity_ambiguous`, and ranked candidates. Near-tied catalog matches require
   identity review instead of an arbitrary high-confidence SKU assignment.
-- `geometry`: backend, matches, RANSAC inliers, coverage and alignment validity.
+- `geometry`: backend, MAGSAC++ inliers, foreground-relative coverage in **both**
+  images, symmetric median reprojection error (pixels at a 1024-pixel long edge),
+  foreground IoU, reference index, number of views attempted, alignment validity,
+  and a rejection reason. Reference indices are zero-based enrollment order.
+- `segmentation`: model name, query validity and foreground fractions before cropping.
+- `score_is_informational`: true for an inconclusive comparison; do not use its
+  confidence as evidence of authenticity.
+- `diagnostic_image_urls`: original photo, foreground cutout, selected reference,
+  aligned image, foreground mask and comparison mask. These use the same protected
+  PNG route as the discrepancy outputs. When alignment fails, `aligned` shows the
+  unaligned cutout and the comparison mask is its foreground mask.
 - `patchcore`: anomaly and normality scores; higher anomaly means more differences.
 - `discrepancy_image_url`, `heatmap_image_url`: paths relative to this API server.
 - `discrepancy_regions`: boxes in the **448×448 aligned/letterboxed query**, not
   original camera-image coordinates or the side-by-side comparison's coordinates.
 - `latency_ms`: preprocessing, queue wait, model/index load, retrieval, geometry,
-  PatchCore, visualization and total processing time (not network transfer time).
+  foreground segmentation, PatchCore, visualization and total processing time
+  (not network transfer time). Reference segmentation is included in model/index
+  load; the separate segmentation field measures the uploaded query.
 - `reasons` and `warnings` for review.
 
 Fetch a returned image URL directly to receive `image/png`. Results and derived
@@ -137,21 +151,44 @@ does not validate the React app's OAuth session or perform refund decisions.
 
 ## How it works
 
-1. Frozen `dinov2_vits14` global features retrieve the closest catalog product.
-2. ALIKED detects/describes local points; LightGlue matches them between query
-   and references. RANSAC fits query-to-reference geometry and rejects outliers.
-3. For a usable fit, compare spatially nearby DINOv2 patches against genuine
-   reference patches (with mild brightness variants). PatchCore-style cosine
-   distances produce a 95th-percentile anomaly score and discrepancy map.
-4. Combine retrieval (15%), geometry (50%) and patch normality (35%). Identity,
-   geometry and anomaly gates also influence the decision. If alignment fails,
-   an unrestricted nearest-neighbor patch score is informational and the decision
-   is `inconclusive`. No fake or random scores are used when models fail.
+1. Local `rembg` + **BiRefNet General Lite** segments the object in each photo.
+   Threshold the mask, crop with a small margin, and replace background with white.
+   Keep all foreground components so detached pieces are not deliberately discarded.
+   Cache reference cutouts, masks and DINO brightness variants in memory. ALIKED
+   reference descriptors are cached on their first use. References rebuild after restart.
+2. Frozen `dinov2_vits14` features retrieve the closest catalog product and rank
+   its reference views. Try the closest view first, then other views until a fit
+   passes geometric and foreground checks. This is a latency optimization; it
+   does not exhaustively choose the lowest anomaly score across all references.
+3. ALIKED + LightGlue matches **foreground-only keypoints**. OpenCV
+   `USAC_MAGSAC` (MAGSAC++) estimates query-to-reference homography. Require at
+   least 8 inliers, 20% inlier ratio, and inlier-hull coverage of at least 15% of
+   the foreground in **each** image. Reject excessive symmetric reprojection
+   error, degenerate warps, insufficient visible reference area and poor overlap.
+   Explicit SIFT fallback also uses foreground masks and MAGSAC++.
+4. Warp both image and mask. Compare spatially nearby DINOv2 patches only in the
+   shared foreground, against brightness variants of the selected reference.
+   The PatchCore-style score remains the 95th percentile of cosine distances.
+   Preserve foreground-outline differences separately: they appear in discrepancy
+   images and trigger review when `1 - foreground_iou` exceeds the product's
+   `max_foreground_difference` threshold (default 0.30). Outline differences can
+   also come from segmentation errors or viewpoint changes.
+5. Combine retrieval (15%) and patch normality (85%). Geometry is a **comparison
+   quality gate**, not an authenticity vote. The legacy `min_geometry_score`
+   catalog field is retained for compatibility but no longer controls the decision.
+   A failed alignment or empty query segmentation produces `inconclusive`; any
+   unrestricted patch score is informational. An unusable reference requires
+   replacement, and model loading errors return `503` rather than fabricated scores.
+
+The scoring weights changed from v1.0; old confidence values and calibrated
+thresholds should not be compared directly. No threshold here is validated for
+production authenticity decisions. Near-tied product identities prevent a `consistent` decision.
 
 The heatmap uses an absolute threshold, so even a perfect reference match is not
 forced to contain red patches. Boxes indicate appearance anomalies, not a proven
-cause of damage or counterfeiting. This is a custom DINOv2-based PatchCore-style
-variant, not the original paper's exact backbone/scoring implementation.
+cause of damage or counterfeiting. Red regions include appearance anomalies and
+foreground-outline differences; the latter are not included in the patch anomaly
+scalar. This is a custom DINOv2-based PatchCore-style variant, not the original paper's exact backbone/scoring implementation.
 
 ## Configuration and safety
 
@@ -160,7 +197,11 @@ See [`.env.example`](.env.example). Export variables or use
 
 - `RETURNSCAN_DATA_DIR`: catalog, normalized references, results and default model
   cache. Defaults to `backend/.runtime`, excluded from Git.
-- `RETURNSCAN_DEVICE`: `auto`, `cpu`, `mps`, `cuda`.
+- `RETURNSCAN_DEVICE`: `auto`, `cpu`, `mps`, `cuda` (PyTorch models).
+- `RETURNSCAN_SEGMENTATION_MODEL`: defaults to `birefnet-general-lite`.
+  `isnet-general-use` is an alternative local model; changing it rebuilds masks
+  on restart and needs new validation. Segmentation runs on ONNX CPU.
+  Weights are cached in the configured model cache under `segmentation/`.
 - `RETURNSCAN_API_KEY`: optional shared key for all data/image routes. Leave empty
   only for local development. Health/docs remain public.
 - `RETURNSCAN_CORS_ORIGINS`: comma-separated exact origins. Defaults to
@@ -180,8 +221,9 @@ and the upstream model-weight hosts.
 Thresholds live per product in `.runtime/catalog.json`. Change them only after
 held-out evaluation and restart the process after manual catalog changes. The
 default thresholds and weights are heuristic: a `consistent` result cannot
-establish authenticity, damage alone is not fraud, backgrounds can affect scores,
-and a homography is only an approximation for a non-planar object. Real products
+establish authenticity, damage alone is not fraud, segmentation errors can affect scores,
+and a homography is only an approximation for a non-planar object. Segmentation
+can omit transparent, reflective or damaged parts and requires inspection. Real products
 need controlled capture and genuine/defective/counterfeit evaluation data.
 
 ## Tests
@@ -194,8 +236,8 @@ ruff format --check backend
 ```
 
 Unit/HTTP contract tests inject deterministic test features and do **not**
-download models. They also exercise real patch-distance math, RANSAC, upload
-validation, auth, CORS, persistence, partial batches and PNG generation.
+download models. They also exercise real patch-distance math, MAGSAC++, masked keypoints,
+foreground coverage, upload validation, auth, CORS, persistence, partial batches and PNG generation.
 For a real-model HTTP smoke test, start the server and run:
 
 ```bash
@@ -206,9 +248,33 @@ python -m backend.smoke_test \
 ```
 
 The smoke test enrolls a uniquely named product, verifies every query using the
-actual server, checks that both returned PNGs decode, and prints scores/latency.
+actual server, checks that all returned PNGs decode, and prints scores/latency.
 It intentionally does not assert that an uncalibrated model labels every item
-correctly. Use `--local-backend sift` to exercise the fallback.
+correctly. Use `--local-backend sift` to exercise the fallback. Repeat
+`--reference` to enroll several views, use `--repeat 2` for cold/warm comparisons,
+and `--output-dir backend/.runtime/smoke` to save every returned PNG and JSON.
+
+### Measured local smoke test
+
+On an Apple M4 laptop, using MPS for DINO and CPU for BiRefNet Lite and
+ALIKED/LightGlue, one catalog product and one cached reference:
+
+| HTTP request | Decision | Visual-match score | Processing time |
+| --- | --- | --- | --- |
+| Rotated/scaled photo, first request with cached weights | consistent | 99.25% | 16.33 s |
+| Same reference photo, warm | consistent | 100% | 7.43 s |
+| Rotated/scaled photo, warm | consistent | 99.25% | 6.57 s |
+| Same reference photo, warm | consistent | 100% | 6.64 s |
+
+The rotated query is a **synthetic 12° rotation and 0.90 scale of a real MVTec
+bottle reference photo**. This verifies alignment and HTTP/image delivery; it is
+not an independent-image authenticity benchmark. In separate real-model checks,
+a different genuine bottle photo and a damaged bottle photo were both
+inconclusive because the matched points covered too little foreground. This
+pipeline rejects weak fits; it does not solve textureless objects or arbitrary
+3D viewpoints. Foreground segmentation dominated warm latency (~4.6–5.6 s).
+First-time weight downloads are additional. Recorded stage timings are
+in [`benchmarks/alignment-smoke.json`](benchmarks/alignment-smoke.json).
 
 ## Upstream work
 
@@ -216,6 +282,9 @@ correctly. Use `--local-backend sift` to exercise the fallback.
 - [LightGlue](https://github.com/cvg/LightGlue), Apache-2.0, including ALIKED support.
 - [ALIKED](https://github.com/Shiaoming/ALIKED), BSD-3-Clause.
 - [PatchCore paper](https://arxiv.org/abs/2106.08265).
+- [rembg](https://github.com/danielgatis/rembg), MIT wrapper; model licenses are separate.
+- [BiRefNet](https://github.com/ZhengPeng7/BiRefNet), MIT.
+- [OpenCV USAC / MAGSAC++](https://docs.opencv.org/4.x/de/d3e/tutorial_usac.html).
 - [RANSAC paper](https://doi.org/10.1145/358669.358692).
 
 Code/weight sources are pinned where fetched through Git. Review upstream

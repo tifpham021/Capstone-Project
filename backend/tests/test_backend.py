@@ -18,6 +18,7 @@ from backend.algorithms import (
     sift_match,
 )
 from backend.config import Settings
+from backend.foreground import Foreground
 from backend.main import create_app
 from backend.schemas import Thresholds
 from backend.service import VerificationService, decode_image, evaluate, render_discrepancies
@@ -30,6 +31,11 @@ def png(color="orange", size=(160, 160)):
     output = io.BytesIO()
     Image.new("RGB", size, color).save(output, "PNG")
     return output.getvalue()
+
+
+class FakeSegmenter:
+    def prepare(self, image):
+        return Foreground(image, np.ones((image.height, image.width), np.uint8), 1.0)
 
 
 class FakeModels:
@@ -46,10 +52,10 @@ class FakeModels:
         vector = F.normalize(torch.tensor([*mean, 1.0]), dim=0)
         return Features(vector, vector.repeat(1024, 1), torch.ones(1024, dtype=torch.bool))
 
-    def local_features(self, image):
+    def local_features(self, image, valid_mask=None):
         return image
 
-    def match(self, ref, query, ref_size):
+    def match(self, ref, query, ref_size, *masks):
         matrix = np.diag([ref.width / query.width, ref.height / query.height, 1.0])
         return LocalMatch("ALIKED+LightGlue", 100, 90, 0.9, 0.8, 0.95, matrix)
 
@@ -57,7 +63,7 @@ class FakeModels:
 @pytest.fixture
 def configured(tmp_path):
     settings = Settings(data_dir=tmp_path)
-    service = VerificationService(settings, models=FakeModels())
+    service = VerificationService(settings, models=FakeModels(), segmenter=FakeSegmenter())
     with TestClient(create_app(settings, service=service)) as client:
         yield settings, service, client
 
@@ -104,8 +110,12 @@ def test_enrollment_and_roundtrip_result(configured):
     assert result["patchcore"]["anomaly_score"] < 1e-5
     assert not result["discrepancy_regions"]
     assert result["latency_ms"]["total"] > 0
-    for key in ("discrepancy_image_url", "heatmap_image_url"):
-        image = client.get(result[key])
+    for url in [
+        result["discrepancy_image_url"],
+        result["heatmap_image_url"],
+        *result["diagnostic_image_urls"].values(),
+    ]:
+        image = client.get(url)
         assert image.status_code == 200
         assert image.headers["content-type"] == "image/png"
         Image.open(io.BytesIO(image.content)).verify()
@@ -122,7 +132,7 @@ def test_duplicate_product_and_barcode(configured):
 def test_catalog_persists_across_restart(configured):
     settings, _, client = configured
     assert enroll(client).status_code == 201
-    restarted = VerificationService(settings, models=FakeModels())
+    restarted = VerificationService(settings, models=FakeModels(), segmenter=FakeSegmenter())
     assert restarted.products()[0]["id"] == "orange-product"
 
 
@@ -187,7 +197,7 @@ def test_limits_and_product_id_safety(configured):
     )
     limited = replace(settings, max_upload_bytes=100)
     with TestClient(
-        create_app(limited, service=VerificationService(limited, FakeModels()))
+        create_app(limited, service=VerificationService(limited, FakeModels(), FakeSegmenter()))
     ) as small:
         assert verify(small).status_code == 413
     with pytest.raises(Exception, match="pixel limit"):
@@ -294,10 +304,11 @@ def test_auto_fallback_and_forced_aliked_error(configured, monkeypatch):
 
     service.models.local_features = fail
     monkeypatch.setattr(
-        "backend.service.sift_match", lambda *_args: LocalMatch("SIFT+RANSAC", 0, 0, 0, 0, 0, None)
+        "backend.service.sift_match",
+        lambda *_args: LocalMatch("SIFT+MAGSAC++", 0, 0, 0, 0, 0, None),
     )
     result = verify(client).json()
-    assert result["geometry"]["backend"] == "SIFT+RANSAC"
+    assert result["geometry"]["backend"] == "SIFT+MAGSAC++"
     assert any("fallback" in warning for warning in result["warnings"])
     assert verify(client, local_backend="aliked").status_code == 503
 

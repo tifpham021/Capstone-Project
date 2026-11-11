@@ -10,7 +10,7 @@ from starlette.exceptions import HTTPException
 
 from backend.config import Settings
 from backend.schemas import BatchResponse, ProductSummary, VerificationResponse
-from backend.service import ServiceError, VerificationService
+from backend.service import IMAGE_ARTIFACTS, ServiceError, VerificationService
 
 IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
 LocalBackend = Literal["auto", "aliked", "sift"]
@@ -57,7 +57,7 @@ def create_app(settings: Settings | None = None, service=None) -> FastAPI:
     settings = settings or Settings.from_env()
     app = FastAPI(
         title="ReturnScan CV Backend",
-        version="1.0.0",
+        version="1.1.0",
         description="DINOv2 retrieval, PatchCore-style discrepancies and ALIKED/LightGlue geometry. Scores are not calibrated authenticity probabilities.",
     )
     app.state.verifier = service if service is not None else VerificationService(settings)
@@ -198,7 +198,7 @@ def create_app(settings: Settings | None = None, service=None) -> FastAPI:
 
     @app.get("/v1/results/{request_id}/{filename}", dependencies=protected)
     def result_image(request_id: str, filename: str):
-        if filename not in {"discrepancy.png", "heatmap.png"}:
+        if filename not in IMAGE_ARTIFACTS:
             raise ServiceError("Image not found", 404)
         return FileResponse(
             app.state.verifier.artifact(request_id, filename),

@@ -3,8 +3,9 @@
     python -m backend.seed
 
 Matches the frontend's sample return (ORD-8921, 20V Cordless Drill, 1.62 kg) and
-adds ORD-1032, an Owala FreeSip 32 oz water bottle in hot pink, for testing the
-CV check with a real product photo. Safe to run more than once: existing orders
+adds ORD-1032, an Owala FreeSip 32 oz water bottle in hot pink, and ORD-1045, the
+same bottle in pink with a tan lid, for testing the CV check with real product
+photos. Safe to run more than once: existing orders
 are left alone. Each order's first item gets its bundled photo as the original
 image; add more with POST /v1/orders/{order_id}/items/{item_id}/images.
 
@@ -25,9 +26,14 @@ from backend.database import Order, OrderImage, OrderItem, create_session_factor
 
 SAMPLE_PHOTO = Path(__file__).parent.parent / "src/assets/figma/inspection/4036d.png"
 OWALA_PHOTO = Path(__file__).parent / "samples/owala-freesip-32oz-hot-pink.png"
+OWALA_TAN_PHOTO = Path(__file__).parent / "samples/owala-freesip-32oz-pink-tan-lid.png"
 
 # Original-order photo for each seeded order (first item, "front" view).
-ORDER_PHOTOS = {"ORD-8921": SAMPLE_PHOTO, "ORD-1032": OWALA_PHOTO}
+ORDER_PHOTOS = {
+    "ORD-8921": SAMPLE_PHOTO,
+    "ORD-1032": OWALA_PHOTO,
+    "ORD-1045": OWALA_TAN_PHOTO,
+}
 
 # Products the AI catalog needs for the seeded orders: (product_id, name, sku, photo).
 CATALOG = [
@@ -36,6 +42,12 @@ CATALOG = [
         "Owala FreeSip 32 oz (Hot Pink)",
         "OWL-FS32-HPK",
         OWALA_PHOTO,
+    ),
+    (
+        "owala-freesip-32-pink-tan-lid",
+        "Owala FreeSip 32 oz (Pink, tan lid)",
+        "OWL-FS32-PTN",
+        OWALA_TAN_PHOTO,
     ),
 ]
 
@@ -93,6 +105,26 @@ def demo_orders() -> list[Order]:
                         "Owala FreeSip Insulated Stainless Steel Water Bottle, 32 oz, Hot Pink"
                     ),
                     sku="OWL-FS32-HPK",
+                    # Approximate empty weight. Weigh the actual bottle and update this.
+                    unit_price_cents=3299,
+                    expected_weight_g=430,
+                    weight_tolerance_g=15,
+                )
+            ],
+        ),
+        Order(
+            id="ORD-1045",
+            customer_name="Jordan Lee",
+            customer_email="jordan.customer@example.com",
+            placed_at=datetime(2026, 11, 10, 17, 40, tzinfo=timezone.utc),
+            items=[
+                OrderItem(
+                    product_id="owala-freesip-32-pink-tan-lid",
+                    product_name=(
+                        "Owala FreeSip Insulated Stainless Steel Water Bottle, 32 oz, "
+                        "Pink with tan lid"
+                    ),
+                    sku="OWL-FS32-PTN",
                     # Approximate empty weight. Weigh the actual bottle and update this.
                     unit_price_cents=3299,
                     expected_weight_g=430,

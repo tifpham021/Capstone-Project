@@ -53,11 +53,15 @@ npm install
 npm run dev
 ```
 
-Open <http://localhost:5173>, choose **Use demo account**, and sign in. If the
-backend is not running, the desktop UI still works with a built-in demo return,
-but nothing is saved (the screen says so).
+Open <http://localhost:5173> for the Raspberry Pi touchscreen UI (the default),
+or <http://localhost:5173/?ui=desktop> for the desktop UI. In the desktop UI,
+choose **Use demo account** and sign in. If the backend is not running, the
+desktop UI still works with a built-in demo return, but nothing is saved (the
+screen says so).
 
 ### Try the CV check
+
+Use the desktop UI (<http://localhost:5173/?ui=desktop>):
 
 1. Look up `ORD-1032` and select **Begin inspection**. The original order photo
    appears as the shipped reference.
@@ -80,11 +84,12 @@ One codebase builds both UIs. Choose which one appears:
 
 | How | Example | Notes |
 | --- | --- | --- |
-| URL parameter | `http://localhost:5173/?ui=touch` | Remembered in that browser. `?ui=desktop` switches back; `?ui=default` clears it |
-| Environment variable | `VITE_UI_MODE=touch` in `.env.local` | The default for that machine. Restart `npm run dev` after changing |
-| Nothing set | | Desktop UI |
+| URL parameter | `http://localhost:5173/?ui=desktop` | Remembered in that browser. `?ui=touch` switches back; `?ui=default` clears it |
+| Environment variable | `VITE_UI_MODE=desktop` in `.env.local` | The default for that machine. Restart `npm run dev` after changing |
+| Nothing set | | Touchscreen UI |
 
-You can test the Raspberry Pi touchscreen UI on any computer with `?ui=touch`.
+The touchscreen UI is the default, so the Raspberry Pi needs no setting. On a
+computer workstation, open `?ui=desktop` once or set `VITE_UI_MODE=desktop`.
 Use your browser's device toolbar (F12, then the phone/tablet icon) to try the
 Pi screen size and touch input. The **desktop UI** uses the backend database and
 CV check for the whole return. The touchscreen UI only calls the CV check to identify

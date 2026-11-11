@@ -3,7 +3,7 @@
 //   'touch'   - the Raspberry Pi touchscreen UI
 //
 // Priority: ?ui=touch|desktop in the URL (remembered in this browser),
-// then a previously remembered choice, then VITE_UI_MODE, then 'desktop'.
+// then a previously remembered choice, then VITE_UI_MODE, then 'touch'.
 // Use ?ui=default to forget the remembered choice and fall back to VITE_UI_MODE.
 
 export const UI_MODES = ['desktop', 'touch']
@@ -15,7 +15,7 @@ const normalize = (value) => {
 }
 
 export function resolveUiMode() {
-  const fromEnv = normalize(import.meta.env.VITE_UI_MODE) || 'desktop'
+  const fromEnv = normalize(import.meta.env.VITE_UI_MODE) || 'touch'
   const fromUrl = new URLSearchParams(window.location.search).get('ui')
 
   try {

@@ -28,8 +28,9 @@ Open the local URL printed in the terminal. Vite typically uses [http://localhos
 
 The Python/FastAPI service lives in [`backend/`](backend/README.md). It supports
 genuine-reference enrollment, one-image or batch verification, and discrepancy
-images. It combines frozen DINOv2 ViT-S/14, PatchCore-style patch comparisons,
-ALIKED + LightGlue and an OpenCV SIFT fallback. Apple Silicon, CUDA and CPU are
+images. Small U2Netp removes backgrounds; masked ALIKED + LightGlue and OpenCV
+MAGSAC++ align the closest reference view. Frozen DINOv2 ViT-S/14 supplies retrieval
+and foreground-only PatchCore-style patch comparisons, with a SIFT fallback. Apple Silicon, CUDA and CPU are
 supported. Model weights download on the first verification request.
 
 ```bash
@@ -41,7 +42,7 @@ python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --workers 1
 
 Open `http://127.0.0.1:8000/docs` to enroll reference photos and test uploads.
 `POST /v1/verify` returns an uncalibrated visual-match confidence, algorithm
-metrics, latency and URLs for discrepancy PNGs. See the backend README for curl
+metrics, stage latency and URLs for discrepancy, cutout, mask and alignment PNGs. See the backend README for curl
 and JavaScript examples, batch uploads, API-key protection and limitations.
 The React inspection/review screens still use their demo values; this change
 exposes the backend API without replacing the UI workflow or its sign-in system.

@@ -1,0 +1,231 @@
+{
+  "description": "Real-model HTTP smoke test; transformed query derives from the reference and does not measure independent-image authenticity accuracy.",
+  "date": "2026-11-10",
+  "platform": "Apple M4, arm64",
+  "device": {
+    "dino": "mps",
+    "segmentation": "cpu",
+    "local_matching": "cpu"
+  },
+  "model": "birefnet-general-lite",
+  "references": 1,
+  "source_case": "MVTec AD bottle, locally collected case 01",
+  "query_transform": {
+    "rotation_degrees": 12,
+    "scale": 0.9
+  },
+  "weights_cached": true,
+  "runs": [
+    {
+      "query": "rotated-genuine.png",
+      "iteration": 0,
+      "decision": "consistent",
+      "confidence_percent": 99.25,
+      "geometry": {
+        "backend": "ALIKED+LightGlue",
+        "matches": 745,
+        "inliers": 740,
+        "inlier_ratio": 0.9932885906040269,
+        "coverage": 0.7080968309083162,
+        "score": 1.0,
+        "alignment_valid": true,
+        "estimator": "USAC_MAGSAC",
+        "query_coverage": 0.6520045176919811,
+        "median_reprojection_error": 0.4441962242126465,
+        "rejection_reason": null,
+        "foreground_iou": 0.8962919325078363,
+        "reference_index": 0,
+        "references_attempted": 1
+      },
+      "segmentation": {
+        "model": "birefnet-general-lite",
+        "valid": true,
+        "query_foreground_fraction": 0.44489012345679013,
+        "reference_foreground_fraction": 0.5041753086419754
+      },
+      "patchcore": {
+        "anomaly_score": 0.10189130902290344,
+        "normality_score": 1.0,
+        "method": "aligned_spatial"
+      },
+      "latency_ms": {
+        "preprocessing": 9.872791997622699,
+        "queue_wait": 0.09400001727044582,
+        "model_and_index_load": 7046.7289999942295,
+        "segmentation": 5456.262791005429,
+        "retrieval": 105.308708967641,
+        "geometry": 3510.228208033368,
+        "patchcore": 83.66933302022517,
+        "visualization": 118.71341697406024,
+        "total": 16330.878250009846
+      },
+      "discrepancy_image_url": "/v1/results/c318e282f88b4eb99c07169e4a8dc992/discrepancy.png"
+    },
+    {
+      "query": "reference.png",
+      "iteration": 0,
+      "decision": "consistent",
+      "confidence_percent": 100.0,
+      "geometry": {
+        "backend": "ALIKED+LightGlue",
+        "matches": 1096,
+        "inliers": 1096,
+        "inlier_ratio": 1.0,
+        "coverage": 0.7569261132958848,
+        "score": 1.0,
+        "alignment_valid": true,
+        "estimator": "USAC_MAGSAC",
+        "query_coverage": 0.7569261132958848,
+        "median_reprojection_error": 0.0,
+        "rejection_reason": null,
+        "foreground_iou": 1.0,
+        "reference_index": 0,
+        "references_attempted": 1
+      },
+      "segmentation": {
+        "model": "birefnet-general-lite",
+        "valid": true,
+        "query_foreground_fraction": 0.5041753086419754,
+        "reference_foreground_fraction": 0.5041753086419754
+      },
+      "patchcore": {
+        "anomaly_score": 1.1920928955078125e-07,
+        "normality_score": 1.0,
+        "method": "aligned_spatial"
+      },
+      "latency_ms": {
+        "preprocessing": 9.524416003841907,
+        "queue_wait": 0.2263750066049397,
+        "model_and_index_load": 0.002208980731666088,
+        "segmentation": 5619.60849998286,
+        "retrieval": 98.03400002419949,
+        "geometry": 1501.2942500179633,
+        "patchcore": 69.34287498006597,
+        "visualization": 132.51804100582376,
+        "total": 7430.550666002091
+      },
+      "discrepancy_image_url": "/v1/results/c5650067f6934138aa6fe0c2fe1ee779/discrepancy.png"
+    },
+    {
+      "query": "rotated-genuine.png",
+      "iteration": 1,
+      "decision": "consistent",
+      "confidence_percent": 99.25,
+      "geometry": {
+        "backend": "ALIKED+LightGlue",
+        "matches": 745,
+        "inliers": 740,
+        "inlier_ratio": 0.9932885906040269,
+        "coverage": 0.7080968309083162,
+        "score": 1.0,
+        "alignment_valid": true,
+        "estimator": "USAC_MAGSAC",
+        "query_coverage": 0.6520045176919811,
+        "median_reprojection_error": 0.4441962242126465,
+        "rejection_reason": null,
+        "foreground_iou": 0.8962919325078363,
+        "reference_index": 0,
+        "references_attempted": 1
+      },
+      "segmentation": {
+        "model": "birefnet-general-lite",
+        "valid": true,
+        "query_foreground_fraction": 0.44489012345679013,
+        "reference_foreground_fraction": 0.5041753086419754
+      },
+      "patchcore": {
+        "anomaly_score": 0.10189130902290344,
+        "normality_score": 1.0,
+        "method": "aligned_spatial"
+      },
+      "latency_ms": {
+        "preprocessing": 10.089833987876773,
+        "queue_wait": 0.24929101346060634,
+        "model_and_index_load": 0.0011249794624745846,
+        "segmentation": 4583.296750031877,
+        "retrieval": 86.8278339621611,
+        "geometry": 1705.2226250525564,
+        "patchcore": 63.46533296164125,
+        "visualization": 122.38829198759049,
+        "total": 6571.541083976626
+      },
+      "discrepancy_image_url": "/v1/results/94d4e14d531742f09b45d928d95ac302/discrepancy.png"
+    },
+    {
+      "query": "reference.png",
+      "iteration": 1,
+      "decision": "consistent",
+      "confidence_percent": 100.0,
+      "geometry": {
+        "backend": "ALIKED+LightGlue",
+        "matches": 1096,
+        "inliers": 1096,
+        "inlier_ratio": 1.0,
+        "coverage": 0.7569261132958848,
+        "score": 1.0,
+        "alignment_valid": true,
+        "estimator": "USAC_MAGSAC",
+        "query_coverage": 0.7569261132958848,
+        "median_reprojection_error": 0.0,
+        "rejection_reason": null,
+        "foreground_iou": 1.0,
+        "reference_index": 0,
+        "references_attempted": 1
+      },
+      "segmentation": {
+        "model": "birefnet-general-lite",
+        "valid": true,
+        "query_foreground_fraction": 0.5041753086419754,
+        "reference_foreground_fraction": 0.5041753086419754
+      },
+      "patchcore": {
+        "anomaly_score": 1.1920928955078125e-07,
+        "normality_score": 1.0,
+        "method": "aligned_spatial"
+      },
+      "latency_ms": {
+        "preprocessing": 10.047667019534856,
+        "queue_wait": 0.2899999963119626,
+        "model_and_index_load": 0.0015829573385417461,
+        "segmentation": 4649.111958045978,
+        "retrieval": 112.89220897015184,
+        "geometry": 1669.8387080105022,
+        "patchcore": 67.20858300104737,
+        "visualization": 134.7331670112908,
+        "total": 6644.123875012156
+      },
+      "discrepancy_image_url": "/v1/results/b41b38525e8a43b585133835cb3bc9ab/discrepancy.png"
+    }
+  ],
+  "sift_control": {
+    "confidence_percent": 100.0,
+    "decision": "consistent",
+    "geometry": {
+      "backend": "SIFT+MAGSAC++",
+      "matches": 190,
+      "inliers": 190,
+      "inlier_ratio": 1.0,
+      "coverage": 0.8719850532099848,
+      "score": 1.0,
+      "alignment_valid": true,
+      "estimator": "USAC_MAGSAC",
+      "query_coverage": 0.8719850532099848,
+      "median_reprojection_error": 0.0,
+      "rejection_reason": null,
+      "foreground_iou": 1.0,
+      "reference_index": 0,
+      "references_attempted": 1
+    },
+    "latency_ms": {
+      "preprocessing": 9.50845901388675,
+      "queue_wait": 0.07995800115168095,
+      "model_and_index_load": 0.042625004425644875,
+      "segmentation": 5006.771124957595,
+      "retrieval": 104.27291702944785,
+      "geometry": 84.17720795841888,
+      "patchcore": 57.311125041451305,
+      "visualization": 128.02554201334715,
+      "total": 5390.188959019724
+    }
+  }
+}

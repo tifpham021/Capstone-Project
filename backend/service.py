@@ -18,19 +18,30 @@ from backend.algorithms import (
     Features,
     LocalMatch,
     Models,
-    align_query,
+    align_foreground,
     letterbox,
     patch_distances,
     sift_match,
 )
 from backend.common import ServiceError, decode_image  # noqa: F401 (re-exported)
 from backend.config import Settings
+from backend.foreground import ForegroundSegmenter
 from backend.schemas import ProductSummary, Thresholds, VerificationResponse
 
 LOG = logging.getLogger(__name__)
 PRODUCT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
 RESULT_ID = re.compile(r"[a-f0-9]{32}\Z")
-ALLOWED_ARTIFACTS = {"discrepancy.png", "heatmap.png", "result.json"}
+IMAGE_ARTIFACTS = {
+    "discrepancy.png",
+    "heatmap.png",
+    "original.png",
+    "foreground.png",
+    "reference.png",
+    "aligned.png",
+    "foreground-mask.png",
+    "comparison-mask.png",
+}
+ALLOWED_ARTIFACTS = IMAGE_ARTIFACTS | {"result.json"}
 
 
 def write_json(destination: Path, value):
@@ -45,6 +56,8 @@ class Reference:
     image: Image.Image
     features: Features
     variants: list[Features]
+    mask: np.ndarray
+    source_fraction: float
     local: object = None
 
 
@@ -70,14 +83,13 @@ def evaluate(similarity, geometry, anomaly, alignment_valid, identity_consistent
             1,
         )
     )
-    confidence = float(np.clip(0.15 * retrieval + 0.50 * geometry + 0.35 * normality, 0, 1))
+    # Matchability establishes whether comparison is meaningful, not authenticity.
+    confidence = float(np.clip(0.15 * retrieval + 0.85 * normality, 0, 1))
     reasons = []
     if not identity_consistent:
         reasons.append("Retrieved identity disagrees with the claimed product.")
     if similarity < thresholds.min_retrieval_cosine:
         reasons.append("Weak similarity to the reference product.")
-    if geometry < thresholds.min_geometry_score:
-        reasons.append("Too few well-distributed, geometrically consistent matches.")
     if anomaly > thresholds.max_patchcore_anomaly:
         reasons.append("Local appearance differences exceed the demo threshold.")
     if confidence < thresholds.min_combined_score:
@@ -92,7 +104,7 @@ def evaluate(similarity, geometry, anomaly, alignment_valid, identity_consistent
     return confidence, normality, decision, reasons
 
 
-def render_discrepancies(reference, aligned, valid_mask, heat, threshold):
+def render_discrepancies(reference, aligned, valid_mask, heat, threshold, alignment_valid=True):
     """Absolute anomaly scale: a perfect match does not get artificial red patches."""
     boxed, valid = letterbox(aligned, valid_mask)
     expanded = cv2.resize(heat, (IMAGE_SIZE, IMAGE_SIZE), interpolation=cv2.INTER_NEAREST)
@@ -127,18 +139,24 @@ def render_discrepancies(reference, aligned, valid_mask, heat, threshold):
     canvas.paste(overlay, (IMAGE_SIZE + 16, 38))
     captions = ImageDraw.Draw(canvas)
     captions.text((10, 12), "GENUINE REFERENCE", fill="#203b45")
-    captions.text((IMAGE_SIZE + 26, 12), "RETURNED ITEM / OBSERVED DIFFERENCES", fill="#203b45")
+    label = (
+        "RETURNED ITEM / OBSERVED DIFFERENCES"
+        if alignment_valid
+        else "UNALIGNED ITEM / INFORMATIONAL ONLY"
+    )
+    captions.text((IMAGE_SIZE + 26, 12), label, fill="#203b45")
     return canvas, overlay, regions
 
 
 class VerificationService:
     """Single-process catalog and serialized inference; no data leaves this server."""
 
-    def __init__(self, settings: Settings, models=None):
+    def __init__(self, settings: Settings, models=None, segmenter=None):
         self.settings = settings
         self.settings.data_dir.mkdir(parents=True, exist_ok=True)
         self.catalog_path = self.settings.data_dir / "catalog.json"
         self.models = models if models is not None else Models(settings)
+        self.segmenter = segmenter if segmenter is not None else ForegroundSegmenter(settings)
         self._lock = threading.RLock()
         self._index: dict[str, IndexedProduct] = {}
 
@@ -216,13 +234,28 @@ class VerificationService:
                 source = (self.settings.data_dir / relative).resolve()
                 if not source.is_relative_to(self.settings.data_dir.resolve()):
                     raise ServiceError("Reference path escapes the data directory", 503)
-                image = decode_image(source.read_bytes(), self.settings)
-                features = self.models.features(image)
+                foreground = self.segmenter.prepare(
+                    decode_image(source.read_bytes(), self.settings)
+                )
+                if not foreground.valid:
+                    raise ServiceError(
+                        "A reference has no usable foreground; enroll a clearer photo", 422
+                    )
+                image, mask = foreground.image, foreground.mask
+                features = self.models.features(image, mask)
+                if not bool(features.mask.any()):
+                    raise ServiceError(
+                        "Reference foreground is too thin/small for patch comparison", 422
+                    )
                 variants = [features] + [
-                    self.models.features(ImageEnhance.Brightness(image).enhance(factor))
+                    self.models.features(ImageEnhance.Brightness(image).enhance(factor), mask)
                     for factor in (0.90, 1.10)
                 ]
-                indexed.references.append(Reference(product["id"], image, features, variants))
+                indexed.references.append(
+                    Reference(
+                        product["id"], image, features, variants, mask, foreground.source_fraction
+                    )
+                )
             if not indexed.references:
                 raise ServiceError("Catalog product has no reference images", 503)
             self._index[product["id"]] = indexed
@@ -234,6 +267,7 @@ class VerificationService:
             raise ServiceError("local_backend must be auto, aliked or sift")
         started = time.perf_counter()
         image = decode_image(image_bytes, self.settings)
+        original = image
         preprocessed = time.perf_counter()
         # Serialize models, catalog writes and MPS work. One uvicorn worker only.
         with self._lock:
@@ -264,7 +298,21 @@ class VerificationService:
                     503,
                 ) from exc
             index_ready = time.perf_counter()
-            query = self.models.features(image)
+            try:
+                foreground = self.segmenter.prepare(image)
+            except Exception as exc:
+                LOG.exception("Foreground segmentation failed")
+                raise ServiceError(
+                    "Foreground model unavailable. Check segmentation setup and first-run network access.",
+                    503,
+                ) from exc
+            image, query_mask = foreground.image, foreground.mask
+            segmented = time.perf_counter()
+            query = self.models.features(image, query_mask)
+            if not bool(query.mask.any()):
+                raise ServiceError(
+                    "Foreground is too thin/small for comparison; retake a closer photo", 422
+                )
             candidates = []
             for product in self._index.values():
                 similarity = max(
@@ -296,18 +344,33 @@ class VerificationService:
             warnings_list = [
                 "Confidence is an uncalibrated visual-match score, not an authenticity probability.",
                 "Demo thresholds require per-product validation. A visual match does not prove authenticity.",
-                "Use cropped, well-lit product photos with reference-like views; backgrounds can influence scores.",
+                "Foreground masks and homographies are estimates; use one well-lit product in a reference-like view.",
             ]
+            if not foreground.valid:
+                warnings_list.append(foreground.reason)
+            ordered_refs = sorted(
+                target.references,
+                key=lambda r: float((query.global_feature * r.features.global_feature).sum().cpu()),
+                reverse=True,
+            )
             matches: list[tuple[Reference, LocalMatch]] = []
             if local_backend != "sift":
                 try:
-                    query_local = self.models.local_features(image)
-                    for ref in target.references:
+                    query_local = self.models.local_features(image, query_mask)
+                    for ref in ordered_refs:
                         if ref.local is None:
-                            ref.local = self.models.local_features(ref.image)
-                        matches.append(
-                            (ref, self.models.match(ref.local, query_local, ref.image.size))
+                            ref.local = self.models.local_features(ref.image, ref.mask)
+                        geometry = self.models.match(
+                            ref.local, query_local, ref.image.size, ref.mask, query_mask, image.size
                         )
+                        matches.append((ref, geometry))
+                        if (
+                            geometry.homography is not None
+                            and align_foreground(
+                                image, geometry.homography, ref.image, query_mask, ref.mask
+                            )[2]
+                        ):
+                            break
                 except Exception as exc:
                     if local_backend == "aliked":
                         raise ServiceError(
@@ -317,18 +380,47 @@ class VerificationService:
                     LOG.warning("Falling back to SIFT", exc_info=True)
                     matches = []
                     warnings_list.append(
-                        "ALIKED/LightGlue unavailable; used SIFT + RANSAC CPU fallback."
+                        "ALIKED/LightGlue unavailable; used SIFT + MAGSAC++ CPU fallback."
                     )
             if not matches:
-                matches = [(ref, sift_match(ref.image, image)) for ref in target.references]
-            ref, geometry = max(
-                matches, key=lambda pair: (pair[1].homography is not None, pair[1].score)
+                for ref in ordered_refs:
+                    geometry = sift_match(ref.image, image, ref.mask, query_mask)
+                    matches.append((ref, geometry))
+                    if (
+                        geometry.homography is not None
+                        and align_foreground(
+                            image, geometry.homography, ref.image, query_mask, ref.mask
+                        )[2]
+                    ):
+                        break
+            evaluated = [
+                (
+                    ref,
+                    match,
+                    align_foreground(image, match.homography, ref.image, query_mask, ref.mask),
+                )
+                for ref, match in matches
+            ]
+            ref, geometry, alignment = max(evaluated, key=lambda item: (item[2][2], item[1].score))
+            aligned, valid, alignment_valid, mask_iou, silhouette = alignment
+            alignment_valid = alignment_valid and foreground.valid
+            rejection_reason = (
+                None
+                if alignment_valid
+                else (
+                    foreground.reason
+                    or geometry.rejection_reason
+                    or "Warp failed foreground visibility/overlap checks"
+                )
             )
-            aligned, valid, alignment_valid = align_query(
-                image, geometry.homography, ref.image.size
-            )
+            if not alignment_valid:
+                aligned, valid, silhouette = image, query_mask, None
             geometry_done = time.perf_counter()
             aligned_features = self.models.features(aligned, valid)
+            if not bool(aligned_features.mask.any()):
+                aligned, valid, alignment_valid, silhouette = image, query_mask, False, None
+                aligned_features = query
+                rejection_reason = "Insufficient shared foreground patches after alignment"
             references = (
                 ref.variants if alignment_valid else [r.features for r in target.references]
             )
@@ -361,19 +453,57 @@ class VerificationService:
                 warnings_list.append(
                     "No reliable homography. Pose-independent PatchCore is informational; decision is inconclusive."
                 )
+            if (
+                alignment_valid
+                and mask_iou is not None
+                and 1 - mask_iou > thresholds.max_foreground_difference
+            ):
+                if decision == "consistent":
+                    reasons = []
+                reasons.append(
+                    "Foreground outlines differ beyond the demo threshold; inspect missing/extra regions or segmentation errors."
+                )
+                if decision != "inconclusive":
+                    decision = "suspicious"
             request_id = uuid.uuid4().hex
             destination = self.settings.data_dir / "results" / request_id
             destination.mkdir(parents=True)
+            display_valid = valid
+            if silhouette is not None:
+                _, silhouette_box = letterbox(aligned, silhouette)
+                silhouette_patches = cv2.resize(
+                    silhouette_box.astype(np.float32),
+                    heat.shape[::-1],
+                    interpolation=cv2.INTER_AREA,
+                )
+                heat = np.maximum(heat, np.where(silhouette_patches > 0.25, 0.8, 0))
+                display_valid = valid | silhouette
             discrepancy, heatmap, regions = render_discrepancies(
-                ref.image, aligned, valid, heat, max(0.12, thresholds.patchcore_good)
+                ref.image,
+                aligned,
+                display_valid,
+                heat,
+                max(0.12, thresholds.patchcore_good),
+                alignment_valid,
             )
             discrepancy.save(destination / "discrepancy.png")
             heatmap.save(destination / "heatmap.png")
+            diagnostics = {
+                "original": original,
+                "foreground": image,
+                "reference": ref.image,
+                "aligned": aligned,
+                "foreground-mask": Image.fromarray(query_mask * 255),
+                "comparison-mask": Image.fromarray(valid * 255),
+            }
+            for label, diagnostic in diagnostics.items():
+                diagnostic.save(destination / f"{label}.png")
             rendered = time.perf_counter()
             response = VerificationResponse(
                 request_id=request_id,
                 confidence=confidence,
                 confidence_percent=round(confidence * 100, 2),
+                score_is_informational=decision == "inconclusive",
                 decision=decision,
                 identified_product=self.summary(self._index[identified_id].metadata),
                 compared_product=self.summary(target.metadata),
@@ -389,6 +519,19 @@ class VerificationService:
                     "coverage": geometry.coverage,
                     "score": geometry.score,
                     "alignment_valid": alignment_valid,
+                    "estimator": "USAC_MAGSAC",
+                    "query_coverage": geometry.query_coverage,
+                    "median_reprojection_error": geometry.median_reprojection_error,
+                    "rejection_reason": rejection_reason,
+                    "foreground_iou": mask_iou,
+                    "reference_index": next(i for i, r in enumerate(target.references) if r is ref),
+                    "references_attempted": len(matches),
+                },
+                segmentation={
+                    "model": self.settings.segmentation_model,
+                    "valid": foreground.valid,
+                    "query_foreground_fraction": foreground.source_fraction,
+                    "reference_foreground_fraction": ref.source_fraction,
                 },
                 patchcore={
                     "anomaly_score": anomaly,
@@ -399,12 +542,16 @@ class VerificationService:
                 },
                 discrepancy_image_url=f"/v1/results/{request_id}/discrepancy.png",
                 heatmap_image_url=f"/v1/results/{request_id}/heatmap.png",
+                diagnostic_image_urls={
+                    label: f"/v1/results/{request_id}/{label}.png" for label in diagnostics
+                },
                 discrepancy_regions=regions,
                 latency_ms={
                     "preprocessing": (preprocessed - started) * 1000,
                     "queue_wait": (load_started - preprocessed) * 1000,
                     "model_and_index_load": (index_ready - load_started) * 1000,
-                    "retrieval": (retrieved - index_ready) * 1000,
+                    "segmentation": (segmented - index_ready) * 1000,
+                    "retrieval": (retrieved - segmented) * 1000,
                     "geometry": (geometry_done - retrieved) * 1000,
                     "patchcore": (patch_done - geometry_done) * 1000,
                     "visualization": (rendered - patch_done) * 1000,

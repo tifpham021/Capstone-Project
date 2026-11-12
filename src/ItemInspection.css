@@ -1162,3 +1162,473 @@
   height: auto;
   margin-bottom: 10px;
 }
+
+/* Two-step desktop flow: inspection evidence and the reviewer decision share
+   one screen. The backend lifecycle is unchanged; this is a UI consolidation. */
+.combined-page {
+  padding-top: 0;
+  padding-bottom: 32px;
+}
+
+.combined-intro {
+  min-height: 184px;
+  height: auto;
+  display: grid;
+  grid-template-columns: minmax(0, .95fr) minmax(560px, 1.05fr);
+  align-items: center;
+  gap: clamp(56px, 5vw, 88px);
+  padding: 34px 0;
+}
+
+.combined-intro > div:first-child {
+  transform: none;
+}
+
+.combined-intro h1 {
+  margin-bottom: 12px;
+  line-height: 1.12;
+}
+
+.combined-intro p {
+  max-width: 680px;
+  line-height: 1.55;
+}
+
+.combined-intro .inspection-case {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 32px;
+}
+
+.combined-intro .inspection-case > div {
+  min-width: 0;
+  gap: 8px;
+}
+
+.combined-intro .inspection-case > div strong {
+  line-height: 1.25;
+}
+
+.combined-intro .inspection-case > div small {
+  line-height: 1.45;
+}
+
+.combined-intro .needs-review {
+  width: max-content;
+  flex: 0 0 auto;
+  padding-inline: 16px;
+  white-space: nowrap;
+}
+
+.needs-review.completed {
+  color: #166534;
+  background: #ecfdf3;
+}
+
+.combined-dashboard {
+  min-height: 690px;
+  display: grid;
+  grid-template-columns: minmax(0, 1008fr) minmax(430px, 568fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.combined-evidence-card,
+.combined-decision-card {
+  min-height: 690px;
+  border-radius: 18px;
+  background: #fff;
+}
+
+.combined-evidence-card {
+  padding: 20px 24px;
+}
+
+.combined-card-heading,
+.combined-decision-heading,
+.combined-weight-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.combined-card-heading h2,
+.combined-decision-heading h2,
+.combined-weight-heading h3 {
+  margin: 0;
+  color: #172033;
+}
+
+.combined-card-heading h2,
+.combined-decision-heading h2 {
+  font-size: 18px;
+}
+
+.combined-card-heading p,
+.combined-decision-heading p {
+  margin: 5px 0 0;
+  color: #8a94a6;
+  font-size: 12px;
+}
+
+.combined-card-heading > span,
+.combined-decision-heading > span,
+.combined-weight-heading > div > span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: #3456bf;
+  background: #eef3ff;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.combined-decision-heading > span {
+  color: #8a5f13;
+  background: #fff7e8;
+}
+
+.combined-decision-heading > span.ready {
+  color: #16794a;
+  background: #ecfdf3;
+}
+
+.combined-images {
+  margin-top: 16px;
+}
+
+.combined-images figure {
+  height: 248px;
+}
+
+.combined-photo-tools {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 10px 12px;
+  border: 1px solid #e6eaf1;
+  border-radius: 10px;
+  margin-top: 12px;
+}
+
+.combined-photo-tools > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.combined-photo-tools strong {
+  color: #278458;
+  font-size: 11px;
+}
+
+.combined-photo-tools span {
+  overflow: hidden;
+  color: #8a94a6;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.combined-photo-tools > div:last-child {
+  display: flex;
+  gap: 8px;
+}
+
+.combined-photo-tools button {
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid #d7dee9;
+  border-radius: 7px;
+  color: #3456bf;
+  background: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.combined-weight-card {
+  min-height: 90px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  align-items: center;
+  gap: 18px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid #e6eaf1;
+  border-radius: 10px;
+}
+
+.combined-weight-heading h3 {
+  font-size: 13px;
+}
+
+.combined-weight-heading > div:first-child {
+  display: grid;
+  gap: 6px;
+}
+
+.combined-weight-heading dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(72px, 1fr));
+  gap: 16px;
+  margin: 0;
+}
+
+.combined-weight-heading dl div {
+  display: grid;
+  gap: 4px;
+}
+
+.combined-weight-heading dt {
+  color: #8a94a6;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.combined-weight-heading dd {
+  margin: 0;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.combined-weight-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.combined-weight-entry input,
+.combined-weight-entry button {
+  height: 38px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.combined-weight-entry input {
+  width: 100%;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid #d7dee9;
+  color: #344054;
+  background: #fff;
+}
+
+.combined-weight-entry button {
+  padding: 0 12px;
+  color: #fff;
+  background: #4169e1;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.combined-weight-entry input:disabled,
+.combined-weight-entry button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.combined-ai-status {
+  margin: 12px 0 0;
+}
+
+.combined-analysis {
+  min-height: 128px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 132px;
+  align-items: center;
+  gap: 16px;
+  margin-top: 12px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  color: #fff;
+  background: linear-gradient(100deg, #17285c 0%, #14234e 100%);
+}
+
+.combined-analysis-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #263b73;
+}
+
+.combined-analysis-icon img:first-child {
+  inset: 6px;
+  width: 30px;
+  height: 30px;
+}
+
+.combined-analysis-icon img:last-child {
+  left: 14px;
+  top: 16px;
+}
+
+.combined-analysis > div:nth-child(2) > span {
+  color: #aebce1;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.combined-analysis h3 {
+  margin: 5px 0 5px;
+  font-size: 17px;
+}
+
+.combined-analysis p {
+  margin: 0;
+  color: #c2cce7;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.combined-signal-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.combined-signal-list b {
+  padding: 4px 7px;
+  border-radius: 999px;
+  color: #d6deef;
+  background: #2b3d6b;
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.combined-signal-list b.match {
+  color: #b8f4d1;
+  background: #1e4a49;
+}
+
+.combined-signal-list b.review {
+  color: #ffe0a6;
+  background: #5b492a;
+}
+
+.combined-confidence {
+  display: grid;
+  justify-items: end;
+  gap: 5px;
+}
+
+.combined-confidence strong {
+  font-size: 31px;
+  line-height: 1;
+}
+
+.combined-confidence span {
+  color: #c2cce7;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.combined-decision-card {
+  height: auto;
+  padding: 20px 22px;
+}
+
+.combined-decision-heading {
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.combined-decision-card fieldset:disabled,
+.combined-decision-card select:disabled,
+.combined-decision-card textarea:disabled {
+  opacity: .55;
+}
+
+.combined-decision-card .audit-note {
+  margin-top: 16px;
+}
+
+.combined-page + .inspection-footer .inspection-actions {
+  gap: 10px;
+}
+
+.combined-page + .inspection-footer .back-button {
+  width: 112px;
+}
+
+.combined-page + .inspection-footer .save-button {
+  width: 142px;
+}
+
+@media (max-width: 1180px) {
+  .combined-intro {
+    min-height: 0;
+    grid-template-columns: 1fr;
+    gap: 24px;
+    padding: 32px 0;
+  }
+
+  .combined-dashboard {
+    grid-template-columns: 1fr;
+  }
+
+  .combined-evidence-card,
+  .combined-decision-card {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .combined-weight-card {
+    grid-template-columns: 1fr;
+  }
+
+  .combined-analysis {
+    grid-template-columns: 42px 1fr;
+  }
+
+  .combined-confidence {
+    grid-column: 2;
+    justify-items: start;
+  }
+
+  .combined-photo-tools {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .combined-photo-tools > div:last-child button {
+    flex: 1;
+  }
+}
+
+@media (max-width: 520px) {
+  .combined-intro .inspection-case {
+    grid-template-columns: 1fr;
+    justify-items: start;
+    gap: 14px;
+  }
+
+  .combined-weight-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .combined-weight-heading dl {
+    width: 100%;
+  }
+
+  .combined-weight-entry {
+    grid-template-columns: 1fr;
+  }
+}

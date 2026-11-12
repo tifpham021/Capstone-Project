@@ -1,16 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import shippedReference from './assets/figma/inspection/4036d.png'
 import returnedItem from './assets/figma/inspection/97c93.png'
-import completeCircle from './assets/figma/inspection/b6992.svg'
-import completeCheck from './assets/figma/inspection/c8145.svg'
-import activeCircle from './assets/figma/inspection/6279e.svg'
-import pendingCircle from './assets/figma/inspection/90707.svg'
-import warningCircle from './assets/figma/inspection/4633e.svg'
-import warningMark from './assets/figma/inspection/630e0.svg'
-import checkCircle from './assets/figma/inspection/488b8.svg'
-import checkMark from './assets/figma/inspection/3a161.svg'
-import neutralCircle from './assets/figma/inspection/08f92.svg'
-import neutralDot from './assets/figma/inspection/140bd.svg'
 import shieldCircle from './assets/figma/inspection/57345.svg'
 import shieldCheck from './assets/figma/inspection/702ae.svg'
 import continueArrow from './assets/figma/inspection/d859a.svg'
@@ -23,7 +13,9 @@ import {
   verifyPhoto,
 } from './api.js'
 import { evidenceSignals, latest } from './returnRecords.js'
+import { RETURN_STATUS } from './returnLifecycle.js'
 import './ItemInspection.css'
+import './ReviewDecision.css'
 
 const checks = [
   {
@@ -48,69 +40,29 @@ const checks = [
   },
 ]
 
+const decisions = [
+  {
+    id: 'approve',
+    title: 'Approve return',
+    description: 'Issue the refund and close the case.',
+    badge: 'Refund',
+  },
+  {
+    id: 'secondary',
+    title: 'Request secondary review',
+    description: 'Route unresolved evidence to another reviewer.',
+    badge: 'Selected',
+  },
+  {
+    id: 'fraud',
+    title: 'Flag suspected fraud',
+    description: 'Hold the refund and send the case to investigation.',
+    badge: 'Hold',
+  },
+]
+
 function StackedAsset({ className = '', children }) {
   return <span className={`inspection-asset ${className}`}>{children}</span>
-}
-
-function InspectionWorkflow({ onBack, onContinue }) {
-  return (
-    <ol className="inspection-workflow" aria-label="Return workflow">
-      <li className="inspection-step complete">
-        <button type="button" onClick={onBack} aria-label="Back to product identification">
-          <StackedAsset className="inspection-step-icon complete-icon">
-            <img src={completeCircle} alt="" />
-            <img src={completeCheck} alt="" />
-          </StackedAsset>
-          <span><strong>Identify return</strong><small>Return and order verified</small></span>
-        </button>
-      </li>
-      <li className="inspection-step current" aria-current="step">
-        <span className="inspection-step-content">
-          <StackedAsset className="inspection-step-icon">
-            <img src={activeCircle} alt="" />
-            <b>2</b>
-          </StackedAsset>
-          <span><strong>Inspect item</strong><small>Compare images and measurements</small></span>
-        </span>
-      </li>
-      <li className="inspection-step upcoming">
-        <button type="button" onClick={onContinue} aria-label="Open final review">
-          <StackedAsset className="inspection-step-icon">
-            <img src={pendingCircle} alt="" />
-            <b>3</b>
-          </StackedAsset>
-          <span><strong>Review decision</strong><small>Approve, escalate, or flag</small></span>
-        </button>
-      </li>
-    </ol>
-  )
-}
-
-function StatusIcon({ state }) {
-  if (state === 'match') {
-    return (
-      <StackedAsset className="check-state-icon">
-        <img src={checkCircle} alt="" />
-        <img src={checkMark} alt="" />
-      </StackedAsset>
-    )
-  }
-
-  if (state === 'review') {
-    return (
-      <StackedAsset className="check-state-icon warning-state-icon">
-        <img src={warningCircle} alt="" />
-        <img src={warningMark} alt="" />
-      </StackedAsset>
-    )
-  }
-
-  return (
-    <StackedAsset className="check-state-icon">
-      <img src={neutralCircle} alt="" />
-      <img src={neutralDot} alt="" />
-    </StackedAsset>
-  )
 }
 
 function stopStream(stream) {
@@ -122,13 +74,13 @@ const formatKg = (grams, signed = false) => {
   return `${signed && kg > 0 ? '+' : ''}${kg.toFixed(2)} kg`
 }
 
-function ItemInspection({ returnCase, onServerUpdate, onNoteChange, onBack, onContinue }) {
+function ItemInspection({ returnCase, onServerUpdate, onBack, onSubmitDecision, reviewerName }) {
   const saved = Boolean(returnCase.saved)
-  const [note, setNote] = useState(returnCase.inspectionNote || '')
   const [photoCount, setPhotoCount] = useState(2)
   const [weight, setWeight] = useState('1.61')
   const [weightInput, setWeightInput] = useState('')
   const [savingWeight, setSavingWeight] = useState(false)
+  const [savingPhoto, setSavingPhoto] = useState(false)
   const [aiStatus, setAiStatus] = useState('')
   const [aiRunning, setAiRunning] = useState(false)
   const [feedback, setFeedback] = useState('')
@@ -136,6 +88,10 @@ function ItemInspection({ returnCase, onServerUpdate, onNoteChange, onBack, onCo
   const [cameraError, setCameraError] = useState('')
   const [returnedPreview, setReturnedPreview] = useState(returnedItem)
   const [addedPhotos, setAddedPhotos] = useState([])
+  const [decision, setDecision] = useState(returnCase.decision?.type || 'secondary')
+  const [reason, setReason] = useState(returnCase.decision?.reason || 'Missing serial / identity evidence')
+  const [decisionNote, setDecisionNote] = useState(returnCase.decision?.note || '')
+  const [submitting, setSubmitting] = useState(false)
   const fileInputRef = useRef(null)
   const videoRef = useRef(null)
   const streamRef = useRef(null)
@@ -235,6 +191,7 @@ function ItemInspection({ returnCase, onServerUpdate, onNoteChange, onBack, onCo
   // Saves the photo to this return, then compares it with the product's
   // reference photos when the product is enrolled for AI.
   const savePhoto = async (file) => {
+    setSavingPhoto(true)
     setFeedback('Saving photo…')
     try {
       await uploadReturnImage(returnCase.id, file, 'label')
@@ -242,10 +199,14 @@ function ItemInspection({ returnCase, onServerUpdate, onNoteChange, onBack, onCo
       setFeedback(`Photo saved to ${returnCase.id}.`)
     } catch (error) {
       setFeedback(`Photo not saved: ${error.message}`)
+      setSavingPhoto(false)
       return
     }
 
-    if (!returnCase.productId) return
+    if (!returnCase.productId) {
+      setSavingPhoto(false)
+      return
+    }
     setAiStatus('Running the AI visual comparison… The first run after the server starts can take a minute.')
     setAiRunning(true)
     try {
@@ -261,6 +222,7 @@ function ItemInspection({ returnCase, onServerUpdate, onNoteChange, onBack, onCo
       )
     } finally {
       setAiRunning(false)
+      setSavingPhoto(false)
     }
   }
 
@@ -272,6 +234,13 @@ function ItemInspection({ returnCase, onServerUpdate, onNoteChange, onBack, onCo
       return
     }
     setSavingWeight(true)
+    if (!saved) {
+      setWeight(kg.toFixed(2))
+      setWeightInput('')
+      setFeedback(`Weight entered manually: ${kg.toFixed(2)} kg (demo, not saved).`)
+      setSavingWeight(false)
+      return
+    }
     try {
       const check = await recordWeight(returnCase.id, Math.round(kg * 1000 * 10) / 10)
       onServerUpdate(await getReturn(returnCase.id))
@@ -286,21 +255,6 @@ function ItemInspection({ returnCase, onServerUpdate, onNoteChange, onBack, onCo
     } finally {
       setSavingWeight(false)
     }
-  }
-
-  const updateNote = (value) => {
-    setNote(value)
-    onNoteChange?.(value)
-  }
-
-  const handleContinue = async () => {
-    // Leaving now would drop the result before it is attached to the return.
-    if (aiRunning) {
-      setFeedback('Wait for the AI visual comparison to finish before continuing.')
-      return
-    }
-    const error = await onContinue()
-    if (error) setFeedback(error)
   }
 
   const onFileSelected = (event) => {
@@ -329,16 +283,8 @@ function ItemInspection({ returnCase, onServerUpdate, onNoteChange, onBack, onCo
     }, 'image/jpeg', 0.92)
   }
 
-  const toggleTare = () => {
-    const tared = weight === '0.00'
-    setWeight(tared ? '1.61' : '0.00')
-    setFeedback(tared ? 'Live scale reading restored.' : 'Scale tared successfully.')
-  }
-
   // Saved returns show real evidence from the server; the demo keeps its sample data.
   const checkRows = saved ? evidenceSignals(returnCase) : checks
-  const completedChecks = checkRows.filter((check) => check.state !== 'pending').length
-  const attentionChecks = checkRows.filter((check) => check.state !== 'match').length
   const lastWeight = saved ? latest(returnCase.weightChecks) : null
   const referenceImage = saved ? apiUrl(returnCase.orderImages[0]?.url) : shippedReference
   const returnedImage = addedPhotos.length || !saved
@@ -347,16 +293,65 @@ function ItemInspection({ returnCase, onServerUpdate, onNoteChange, onBack, onCo
   const imageCount = saved
     ? returnCase.orderImages.length + returnCase.returnImages.length
     : photoCount
+  const isComplete = returnCase.status === RETURN_STATUS.COMPLETED
+  const expectedWeight = saved ? returnCase.expectedWeightKg : 1.62
+  const measuredWeight = saved
+    ? (lastWeight ? lastWeight.measured_weight_g / 1000 : null)
+    : Number.parseFloat(weight)
+  const hasPhotoEvidence = saved
+    ? Boolean(returnCase.returnImages.length)
+    : Boolean(returnedImage)
+  const hasWeightEvidence = Number.isFinite(measuredWeight) && measuredWeight > 0
+  const analysisComplete = hasPhotoEvidence && hasWeightEvidence && !savingPhoto && !aiRunning
+  const verification = saved ? latest(returnCase.verifications) : null
+  const confidence = saved
+    ? (verification && verification.decision !== 'inconclusive'
+      ? Math.round(verification.confidence * 100)
+      : null)
+    : 91
+  const refund = returnCase.refundAmount
+  const weightDifference = measuredWeight !== null && expectedWeight
+    ? measuredWeight - expectedWeight
+    : null
+
+  const describeDecision = (option) => (
+    option.id === 'approve' && refund !== null && refund !== undefined
+      ? `Issue the $${refund.toFixed(2)} refund and close the case.`
+      : option.description
+  )
+
+  const submitDecision = async (event) => {
+    event.preventDefault()
+    if (submitting || isComplete) return
+    if (!analysisComplete) {
+      setFeedback('Add a return photo and measured weight, then wait for the analysis to finish.')
+      return
+    }
+    if (decision !== 'approve' && !decisionNote.trim()) {
+      setFeedback('Add a decision note explaining what the next reviewer should verify.')
+      return
+    }
+
+    const title = decisions.find((option) => option.id === decision)?.title
+    setSubmitting(true)
+    setFeedback(saved ? 'Saving the final decision…' : '')
+    const error = await onSubmitDecision({
+      type: decision,
+      title,
+      reason: decision === 'approve' ? '' : reason,
+      note: decisionNote,
+    })
+    setSubmitting(false)
+    setFeedback(error || `${title} recorded for ${returnCase.id}.`)
+  }
 
   return (
     <>
-      <main id="main" className="inspection-page">
-        <InspectionWorkflow onBack={onBack} onContinue={handleContinue} />
-
-        <section className="inspection-intro" aria-labelledby="inspection-title">
+      <main id="main" className="inspection-page combined-page">
+        <section className="inspection-intro combined-intro" aria-labelledby="inspection-title">
           <div>
-            <h1 id="inspection-title">Inspect the returned item</h1>
-            <p>Compare the live return against the verified shipment before making a decision.</p>
+            <h1 id="inspection-title">Inspect &amp; decide</h1>
+            <p>Upload the return photos and enter the measured weight, then review the analysis before recording your decision.</p>
           </div>
           <div className="inspection-case">
             <div>
@@ -364,18 +359,23 @@ function ItemInspection({ returnCase, onServerUpdate, onNoteChange, onBack, onCo
               <strong>{returnCase.id}</strong>
               <small>{returnCase.productName} / {returnCase.productModel}</small>
             </div>
-            <span className="needs-review"><i />Inspection in progress</span>
+            <span className={`needs-review${isComplete ? ' completed' : ''}`}>
+              <i />{isComplete ? 'Completed' : 'Needs review'}
+            </span>
           </div>
         </section>
 
-        <div className={`inspection-dashboard${saved ? ' saved-evidence' : ''}`}>
-          <section className="comparison-card" aria-labelledby="comparison-title">
-            <div className="comparison-heading">
-              <h2 id="comparison-title">Visual comparison</h2>
-              <span>{imageCount} images {saved ? 'saved' : 'synced'}</span>
+        <div className="combined-dashboard">
+          <section className="combined-evidence-card" aria-labelledby="comparison-title">
+            <div className="combined-card-heading">
+              <div>
+                <h2 id="comparison-title">Item evidence</h2>
+                <p>Reference and returned-item photos</p>
+              </div>
+              <span>Manual inputs</span>
             </div>
 
-            <div className="comparison-images">
+            <div className="comparison-images combined-images">
               <figure>
                 {referenceImage ? (
                   <img src={referenceImage} alt={`Original photo of ${returnCase.productName} before shipping`} />
@@ -394,69 +394,36 @@ function ItemInspection({ returnCase, onServerUpdate, onNoteChange, onBack, onCo
                   <p className="comparison-empty">No photo yet. Use Add photo to capture the returned item.</p>
                 )}
                 <figcaption className="image-label returned-label"><i />Returned item</figcaption>
-                <span className="image-count live-count">{addedPhotos.length || (saved && returnCase.returnImages.length) ? 'Added' : 'Live'}</span>
+                <span className="image-count live-count">
+                  {!saved || addedPhotos.length || returnCase.returnImages.length ? 'Uploaded' : 'Needed'}
+                </span>
               </figure>
             </div>
 
-            <div className="attention-panel">
-              <StackedAsset className="attention-icon">
-                <img src={warningCircle} alt="" />
-                <img src={warningMark} alt="" />
-              </StackedAsset>
+            <div className="combined-photo-tools">
               <div>
-                {saved ? (
-                  <>
-                    <strong>{returnCase.returnImages.length ? 'Add another angle' : 'Photograph the returned item'}</strong>
-                    <p>Capture the item and its serial plate. Photos are saved to this return and compared with the original.</p>
-                  </>
-                ) : (
-                  <>
-                    <strong>Photo angle needs attention</strong>
-                    <p>Product shape appears consistent. Add a clear serial-plate photo to complete the check.</p>
-                  </>
-                )}
+                <strong>✓ {imageCount} photo{imageCount === 1 ? '' : 's'} available</strong>
+                <span>{saved ? 'Photos are saved to this return.' : 'Use the camera or upload files while hardware is disconnected.'}</span>
               </div>
-              <button
-                className="add-photo-button"
-                type="button"
-                onClick={() => setPhotoMode('choose')}
-              >
-                <span>＋</span>Add photo
-              </button>
+              <div>
+                <button type="button" onClick={() => setPhotoMode('choose')}>Replace photo</button>
+                <button type="button" onClick={() => setPhotoMode('choose')}>Add angle</button>
+              </div>
             </div>
 
-            <label className="inspection-note">
-              <span>Inspection note</span>
-              <textarea
-                value={note}
-                onChange={(event) => updateNote(event.target.value)}
-                placeholder="Add observations about packaging, wear, serial markings, or unusual details..."
-              />
-              <small>Notes will be included in the final review record.</small>
-            </label>
-          </section>
-
-          <aside className="inspection-sidebar" aria-label="Automated inspection results">
-            {saved ? (
-            <section className="weight-card">
-              <div className="weight-heading">
-                <h2>Weight check</h2>
-                <span className="stable-pill"><i />Manual entry</span>
-              </div>
-              <div className="weight-reading">
-                <div className="current-weight">
-                  <strong>{lastWeight ? (lastWeight.measured_weight_g / 1000).toFixed(2) : '—'}</strong><b>kg</b>
-                  <span>{lastWeight ? 'Recorded scale reading' : 'No reading recorded yet'}</span>
+            <section className="combined-weight-card" aria-labelledby="weight-title">
+              <div className="combined-weight-heading">
+                <div>
+                  <h3 id="weight-title">Weight</h3>
+                  <span>Entered manually</span>
                 </div>
-                <div className="expected-weight">
-                  <span>Expected</span>
-                  <strong>{returnCase.expectedWeightKg ? `${returnCase.expectedWeightKg.toFixed(2)} kg` : 'Not on file'}</strong>
-                  {lastWeight ? (
-                    <span>Delta <b className={lastWeight.within_tolerance ? '' : 'out'}>{formatKg(lastWeight.difference_g, true)}</b></span>
-                  ) : null}
-                </div>
+                <dl>
+                  <div><dt>Expected</dt><dd>{expectedWeight ? `${expectedWeight.toFixed(2)} kg` : 'Not on file'}</dd></div>
+                  <div><dt>Measured</dt><dd>{measuredWeight ? `${measuredWeight.toFixed(2)} kg` : '—'}</dd></div>
+                  <div><dt>Delta</dt><dd>{weightDifference === null ? '—' : `${weightDifference >= 0 ? '+' : ''}${weightDifference.toFixed(2)} kg`}</dd></div>
+                </dl>
               </div>
-              <form className="weight-entry" onSubmit={submitWeight}>
+              <form className="combined-weight-entry" onSubmit={submitWeight}>
                 <label>
                   <span className="sr-only">Scale reading in kilograms</span>
                   <input
@@ -464,98 +431,115 @@ function ItemInspection({ returnCase, onServerUpdate, onNoteChange, onBack, onCo
                     inputMode="decimal"
                     step="0.001"
                     min="0"
-                    placeholder={returnCase.expectedWeightKg ? 'Scale reading in kg, e.g. 1.61' : 'No expected weight on file'}
+                    placeholder={expectedWeight ? 'Enter measured weight in kg' : 'No expected weight on file'}
                     value={weightInput}
                     onChange={(event) => setWeightInput(event.target.value)}
-                    disabled={!returnCase.expectedWeightKg || savingWeight}
+                    disabled={!expectedWeight || savingWeight || isComplete}
                   />
                 </label>
-                <button type="submit" disabled={!returnCase.expectedWeightKg || savingWeight || !weightInput}>
-                  {savingWeight ? 'Saving…' : 'Record weight'}
+                <button type="submit" disabled={!expectedWeight || savingWeight || !weightInput || isComplete}>
+                  {savingWeight ? 'Saving…' : 'Use this weight'}
                 </button>
               </form>
-              {lastWeight ? (
-                <div className={`tolerance-bar${lastWeight.within_tolerance ? '' : ' out'}`}>
-                  <span>{lastWeight.within_tolerance ? '✓' : '!'}</span>
-                  <strong>
-                    {lastWeight.within_tolerance ? 'Within' : 'Outside'} ±{(lastWeight.tolerance_g / 1000).toFixed(3)} kg tolerance
-                  </strong>
-                </div>
-              ) : null}
-            </section>
-            ) : (
-            <section className="weight-card">
-              <div className="weight-heading">
-                <h2>Live weight check</h2>
-                <span className="stable-pill"><i />Live and stable</span>
-              </div>
-              <div className="weight-reading">
-                <div className="current-weight">
-                  <strong>{weight}</strong><b>kg</b>
-                  <span>Current scale reading</span>
-                </div>
-                <div className="expected-weight">
-                  <span>Expected</span>
-                  <strong>1.62 kg</strong>
-                  <span>Delta <b>{weight === '0.00' ? '-1.62 kg' : '-0.01 kg'}</b></span>
-                </div>
-              </div>
-              <div className="tolerance-bar">
-                <span>✓</span>
-                <strong>Within +/-0.05 kg tolerance</strong>
-                <button type="button" onClick={toggleTare}>{weight === '0.00' ? 'Use live reading' : 'Tare scale'}</button>
-              </div>
-            </section>
-            )}
-
-            <section className="automated-card">
-              <div className="automated-heading">
-                <h2>Automated checks</h2>
-                <span>{completedChecks} of {checkRows.length} complete</span>
-              </div>
-              {aiStatus ? <p className="ai-status" role="status">{aiStatus}</p> : null}
-              <div className="checks-list">
-                {checkRows.map((check) => (
-                  <div className="check-row" key={check.title}>
-                    <StatusIcon state={check.state} />
-                    <div><strong>{check.title}</strong><small>{check.detail}</small></div>
-                    <span className={`check-pill ${check.state}`}>{check.state}</span>
-                  </div>
-                ))}
-              </div>
             </section>
 
-            <section className="preserved-card">
-              <StackedAsset className="preserved-icon">
+            {aiStatus ? <p className="ai-status combined-ai-status" role="status">{aiStatus}</p> : null}
+
+            <section className={`combined-analysis${analysisComplete ? ' complete' : ''}`} aria-live="polite">
+              <StackedAsset className="combined-analysis-icon">
                 <img src={shieldCircle} alt="" />
                 <img src={shieldCheck} alt="" />
               </StackedAsset>
               <div>
-                <h2>Evidence package is preserved</h2>
-                <p>
-                  {saved
-                    ? 'Photos and weights are saved to this return as you add them. The note is saved with the decision.'
-                    : 'Images, readings, and reviewer notes will carry into the decision.'}
-                </p>
+                <span>{analysisComplete ? 'Analysis complete' : 'Waiting for evidence'}</span>
+                <h3>{analysisComplete ? 'Likely the same product' : 'Add a photo and measured weight'}</h3>
+                <p>{analysisComplete ? 'Photos and weight are consistent. The final decision still requires a reviewer.' : 'Decision controls will unlock after both evidence inputs are available.'}</p>
+                <div className="combined-signal-list">
+                  {checkRows.map((check) => (
+                    <b className={check.state} key={check.key || check.title}>
+                      {check.state === 'match' ? '✓' : check.state === 'review' ? '!' : '·'} {check.title}
+                    </b>
+                  ))}
+                </div>
               </div>
-              <span className="autosaved-pill">{saved ? 'Auto-saved' : 'Demo only'}</span>
+              <div className="combined-confidence">
+                <strong>{analysisComplete && confidence !== null ? `${confidence}%` : '—'}</strong>
+                <span>Match confidence</span>
+              </div>
             </section>
-          </aside>
+          </section>
+
+          <form id="combined-decision-form" className="decision-card combined-decision-card" onSubmit={submitDecision}>
+            <div className="combined-decision-heading">
+              <div><h2>Final decision</h2><p>The reviewer makes the final call. AI results are advisory.</p></div>
+              <span className={analysisComplete ? 'ready' : ''}>{analysisComplete ? 'Analysis complete' : 'Waiting for analysis'}</span>
+            </div>
+
+            <div className="advisory-note">
+              <span>i</span>
+              <div>
+                <strong>{analysisComplete ? 'Decision controls are ready.' : 'Decision controls unlock after analysis.'}</strong>
+                <small>{analysisComplete ? 'Review the evidence and choose an outcome.' : 'Add the required photo and weight first.'}</small>
+              </div>
+            </div>
+
+            <fieldset disabled={!analysisComplete || isComplete}>
+              <legend className="sr-only">Final decision</legend>
+              {decisions.map((option) => (
+                <label className={`decision-option ${decision === option.id ? 'selected' : ''} ${option.id}`} key={option.id}>
+                  <input
+                    type="radio"
+                    name="decision"
+                    value={option.id}
+                    checked={decision === option.id}
+                    onChange={() => setDecision(option.id)}
+                  />
+                  <span className="decision-radio"><i /></span>
+                  <span><strong>{option.title}</strong><small>{describeDecision(option)}</small></span>
+                  <b>{decision === option.id && option.id === 'secondary' ? 'Selected' : option.badge}</b>
+                </label>
+              ))}
+            </fieldset>
+
+            {decision !== 'approve' ? (
+              <label className="decision-field">
+                <span>Reason for escalation</span>
+                <select value={reason} onChange={(event) => setReason(event.target.value)} disabled={!analysisComplete || isComplete}>
+                  <option>Missing serial / identity evidence</option>
+                  <option>Visual evidence is inconclusive</option>
+                  <option>Weight measurement is inconsistent</option>
+                  <option>Suspected item substitution</option>
+                </select>
+              </label>
+            ) : null}
+
+            <label className="decision-field decision-note">
+              <span>Decision note</span>
+              <textarea
+                value={decisionNote}
+                onChange={(event) => setDecisionNote(event.target.value)}
+                placeholder="Explain what the next reviewer should verify..."
+                disabled={!analysisComplete || isComplete}
+              />
+              <small>{decision === 'approve' ? 'Optional for approvals' : 'Required for escalations and fraud flags'}</small>
+            </label>
+
+            <span className="audit-note">Reviewer: {reviewerName} / Every decision is recorded in the audit log.</span>
+          </form>
         </div>
       </main>
 
       <footer className="inspection-footer">
         <div>
-          <strong>
-            {attentionChecks ? `${attentionChecks} check${attentionChecks === 1 ? ' needs' : 's need'} attention` : 'All checks complete'}
-          </strong>
+          <strong>{isComplete ? 'Decision recorded' : analysisComplete ? 'Analysis complete — reviewer decision required' : 'Evidence required before a decision'}</strong>
           <span aria-live="polite">
-            {feedback || (returnCase.demo
-              ? 'Demo return: nothing on this page is saved. Start the backend and look up an order to save evidence.'
-              : 'You can continue now or add the recommended photos for higher confidence.')}
+            {feedback || (analysisComplete
+              ? 'Review the AI result, choose an outcome, and add a note when escalation is needed.'
+              : 'Upload the returned-item photo and enter the measured weight to continue.')}
           </span>
         </div>
         <div className="inspection-actions">
+          <button type="button" className="back-button" onClick={onBack}>‹&nbsp; Back</button>
           <button
             type="button"
             className="save-button"
@@ -565,8 +549,13 @@ function ItemInspection({ returnCase, onServerUpdate, onNoteChange, onBack, onCo
           >
             Save for later
           </button>
-          <button type="button" className="continue-button" onClick={handleContinue} disabled={aiRunning}>
-            Continue to review
+          <button
+            type="submit"
+            form="combined-decision-form"
+            className="submit-review-button"
+            disabled={!analysisComplete || isComplete || submitting}
+          >
+            {isComplete ? 'Decision recorded' : submitting ? 'Saving…' : 'Submit decision'}
             <img src={continueArrow} alt="" />
           </button>
         </div>

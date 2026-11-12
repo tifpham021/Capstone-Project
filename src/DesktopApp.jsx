@@ -19,7 +19,6 @@ import shieldIcon from './assets/figma/d88f6.svg'
 import shieldCheck from './assets/figma/70c7b.svg'
 import pageBackground from './assets/figma/24aa6.svg'
 import ItemInspection from './ItemInspection.jsx'
-import ReviewDecision from './ReviewDecision.jsx'
 import BarcodeScanner from './DesktopBarcodeScanner.jsx'
 import LoginPage from './DesktopLoginPage.jsx'
 import AccountDashboard, { ProfileAvatar } from './DesktopAccountDashboard.jsx'
@@ -34,7 +33,6 @@ import {
 import {
   RETURN_STATUS,
   canOpenStep,
-  createIdentifiedReturn,
   getStatusLabel,
   transitionReturn,
 } from './returnLifecycle.js'
@@ -42,13 +40,6 @@ import { createReturn, recordDecision, searchOrders, setReturnStatus } from './a
 import { fromServerReturn, pickItem, pickOrder, provisionalReturn } from './returnRecords.js'
 import './App.css'
 
-const workflowSteps = [
-  ['1', 'Identify return', 'Scan or look up the item'],
-  ['2', 'Inspect item', 'Compare images and measurements'],
-  ['3', 'Review decision', 'Approve, escalate, or flag'],
-]
-
-const SAMPLE_LOOKUP = 'ORD-8921'
 const statusRank = (status) => Object.values(RETURN_STATUS).indexOf(status)
 
 function LayeredIcon({ className = '', children }) {
@@ -125,8 +116,8 @@ function Workstation({ session, onSignOut }) {
   const inputRef = useRef(null)
   const lookupRequest = useRef(0)
 
-  // Replaces the case with the server's copy, keeping the unsaved inspection note.
-  // A slow response (e.g. the AI check) never moves the status backwards.
+  // Replaces the case with the server's copy. A slow response (for example,
+  // the visual check) never moves the return backward in the lifecycle.
   const applyServerReturn = (record) => {
     setReturnCase((current) => {
       const next = fromServerReturn(record)
@@ -135,7 +126,7 @@ function Workstation({ session, onSignOut }) {
         next.history = current.history
         next.decision = current.decision
       }
-      return { ...next, inspectionNote: current?.inspectionNote || '' }
+      return next
     })
   }
 
@@ -181,9 +172,8 @@ function Workstation({ session, onSignOut }) {
         setStatus(error.message)
         return
       }
-      const identifiedReturn = { ...createIdentifiedReturn(value), demo: true }
-      setReturnCase(identifiedReturn)
-      setStatus(`Server offline: showing demo return ${identifiedReturn.id}. Nothing will be saved.`)
+      setReturnCase(null)
+      setStatus('Could not connect to the return database. Start the backend and try again.')
     }
   }
 
@@ -216,9 +206,17 @@ function Workstation({ session, onSignOut }) {
     ))
   }
 
-  // Steps 2 and 3 are always reachable. Without an identified return, the
-  // sample return is loaded and moved forward so the page has case data.
-  const openStep = (step, currentReturn = returnCase) => {
+  // Inspection and the final decision now share one screen. Older links that
+  // still point at "review" are normalized to the combined second step.
+  const openStep = (requestedStep, currentReturn = returnCase) => {
+    const step = requestedStep === 'review' ? 'inspection' : requestedStep
+    if (currentReturn?.demo) {
+      setReturnCase(null)
+      setLookup('')
+      setStatus('')
+      setScreen('identify')
+      return
+    }
     if (currentReturn === returnCase && canOpenStep(currentReturn, step)) {
       setScreen(step)
       return
@@ -229,29 +227,20 @@ function Workstation({ session, onSignOut }) {
     }
     // Saved returns move forward through the server so its status stays in sync.
     if (currentReturn === returnCase && returnCase?.saved) {
-      if (step === 'review' && returnCase.status === RETURN_STATUS.INSPECTION_IN_PROGRESS) {
-        continueToReview()
-      } else {
-        beginInspection()
-      }
+      beginInspection()
       return
     }
 
-    // A provisional (not yet created) case can't skip ahead; use the demo instead.
-    let nextReturn = currentReturn && !currentReturn.pending
-      ? currentReturn
-      : { ...createIdentifiedReturn(SAMPLE_LOOKUP), demo: true }
-    if (nextReturn.status === RETURN_STATUS.IDENTIFIED) {
-      nextReturn = transitionReturn(nextReturn, RETURN_STATUS.INSPECTION_IN_PROGRESS)
-    }
-    if (step === 'review' && nextReturn.status === RETURN_STATUS.INSPECTION_IN_PROGRESS) {
-      nextReturn = transitionReturn(nextReturn, RETURN_STATUS.AWAITING_DECISION)
+    // Never invent a sample product when no case is open. A provisional lookup
+    // must be confirmed from the identification screen before inspection.
+    if (currentReturn?.pending) {
+      setLookup(currentReturn.lookupIdentifier)
+      setStatus('Confirm this item before starting the inspection.')
+      setScreen('identify')
+      return
     }
 
-    setReturnCase(nextReturn)
-    setLookup(nextReturn.lookupIdentifier)
-    setStatus('')
-    setScreen(step)
+    startNewReturn()
   }
 
   // Confirming the order creates the return in the database, then starts the inspection.
@@ -293,54 +282,45 @@ function Workstation({ session, onSignOut }) {
     setScreen('inspection')
   }
 
-  // Returns an error message for the inspection screen, or null on success.
-  const continueToReview = async () => {
-    if (returnCase.saved) {
-      if (returnCase.status === RETURN_STATUS.INSPECTION_IN_PROGRESS) {
+  // The combined screen moves the case into awaiting-decision immediately
+  // before recording the reviewer's final choice.
+  const completeReturn = async (decision) => {
+    let readyReturn = returnCase
+
+    if (readyReturn?.status === RETURN_STATUS.INSPECTION_IN_PROGRESS) {
+      if (readyReturn.saved) {
         try {
-          applyServerReturn(await setReturnStatus(returnCase.id, RETURN_STATUS.AWAITING_DECISION))
+          const awaiting = await setReturnStatus(readyReturn.id, RETURN_STATUS.AWAITING_DECISION)
+          readyReturn = fromServerReturn(awaiting)
         } catch (error) {
-          return `Could not continue: ${error.message}`
+          return `Could not prepare the decision: ${error.message}`
         }
+      } else {
+        readyReturn = transitionReturn(readyReturn, RETURN_STATUS.AWAITING_DECISION)
       }
-      setScreen('review')
-      return null
+      setReturnCase(readyReturn)
     }
 
-    setReturnCase((current) => (
-      current.status === RETURN_STATUS.INSPECTION_IN_PROGRESS
-        ? transitionReturn(current, RETURN_STATUS.AWAITING_DECISION)
-        : current
-    ))
-    setScreen('review')
-    return null
-  }
-
-  // Returns an error message for the review screen, or null on success.
-  const completeReturn = async (decision) => {
-    if (returnCase?.status !== RETURN_STATUS.AWAITING_DECISION) {
+    if (readyReturn?.status !== RETURN_STATUS.AWAITING_DECISION) {
       return 'This return is not ready for a decision yet.'
     }
 
     let completedReturn
-    if (returnCase.saved) {
-      const note = [
-        decision.note.trim(),
-        returnCase.inspectionNote?.trim() && `Inspection note: ${returnCase.inspectionNote.trim()}`,
-      ].filter(Boolean).join('\n\n')
+    if (readyReturn.saved) {
+      const note = decision.note.trim()
       try {
-        const saved = await recordDecision(returnCase.id, {
+        const saved = await recordDecision(readyReturn.id, {
           outcome: decision.type,
           reason: decision.type === 'approve' ? null : decision.reason || null,
           note: note || null,
           reviewer_email: user.email,
         })
-        completedReturn = { ...fromServerReturn(saved), inspectionNote: returnCase.inspectionNote }
+        completedReturn = fromServerReturn(saved)
       } catch (error) {
         return `Could not save the decision: ${error.message}`
       }
     } else {
-      completedReturn = transitionReturn(returnCase, RETURN_STATUS.COMPLETED, {
+      completedReturn = transitionReturn(readyReturn, RETURN_STATUS.COMPLETED, {
         decision,
         activityLabel: `Decision recorded: ${decision.title}`,
       })
@@ -372,8 +352,7 @@ function Workstation({ session, onSignOut }) {
   }
 
   const resumeReturn = () => {
-    if (canOpenStep(returnCase, 'review')) setScreen('review')
-    else if (canOpenStep(returnCase, 'inspection')) setScreen('inspection')
+    if (canOpenStep(returnCase, 'inspection')) setScreen('inspection')
     else setScreen('identify')
   }
 
@@ -450,33 +429,6 @@ function Workstation({ session, onSignOut }) {
         />
       ) : screen === 'identify' ? (
       <main id="main" className="page-content">
-        <ol className="workflow" aria-label="Return workflow">
-          {workflowSteps.map(([number, title, description], index) => {
-            const step = ['identify', 'inspection', 'review'][index]
-            const clickable = index > 0
-            return (
-            <li
-              className={`${index === 0 ? 'workflow-step active' : 'workflow-step'}${clickable ? ' clickable' : ''}`}
-              key={number}
-              role={clickable ? 'button' : undefined}
-              tabIndex={clickable ? 0 : undefined}
-              aria-label={clickable ? `Open ${title.toLowerCase()}` : undefined}
-              title={clickable && !canOpenStep(returnCase, step) ? 'Opens with the sample return ORD-8921' : undefined}
-              onClick={clickable ? () => openStep(step) : undefined}
-              onKeyDown={clickable ? (event) => {
-                if (event.key === 'Enter' || event.key === ' ') openStep(step)
-              } : undefined}
-            >
-              <span className="step-number">{number}</span>
-              <span className="step-copy">
-                <strong>{title}</strong>
-                <small>{description}</small>
-              </span>
-            </li>
-            )
-          })}
-        </ol>
-
         <section className="intro" aria-labelledby="page-title">
           <div>
             <h1 id="page-title">Identify the returned item</h1>
@@ -624,19 +576,11 @@ function Workstation({ session, onSignOut }) {
           </aside>
         </div>
       </main>
-      ) : screen === 'inspection' ? (
+      ) : (
         <ItemInspection
           returnCase={returnCase}
           onServerUpdate={applyServerReturn}
-          onNoteChange={(inspectionNote) => setReturnCase((current) => ({ ...current, inspectionNote }))}
           onBack={() => openStep('identify')}
-          onContinue={continueToReview}
-        />
-      ) : (
-        <ReviewDecision
-          returnCase={returnCase}
-          onIdentify={() => openStep('identify')}
-          onBack={() => openStep('inspection')}
           onSubmitDecision={completeReturn}
           reviewerName={user.name}
         />

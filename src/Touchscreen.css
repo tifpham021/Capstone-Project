@@ -100,11 +100,12 @@ html { scrollbar-gutter:auto; background:#f3f6f5; }
 .weight-summary .touch-row + .touch-row { margin-top:8px; font-size:12px; }
 .weight-summary .touch-row > span:not(.touch-pill) { color:var(--muted); }
 .weight-summary strong { font-size:13px; }
-.verify-cameras { display:grid; gap:10px; }
-.verify-camera { background:#273d36; border-radius:14px; padding:12px 13px; color:white; }
+.verify-cameras { display:grid; }
+.verify-camera { min-height:0; display:flex; flex-direction:column; background:#273d36; border-radius:14px; padding:12px 13px; color:white; }
 .verify-camera .touch-pill { background:#91d6bd; color:#17352d; }
 .verify-camera strong { font-size:13px; }
 .evidence-preview { position:relative; height:59px; background-size:cover; background-position:center; border-radius:9px; margin-top:9px; }
+.verify-cameras .evidence-preview { flex:1; height:auto; min-height:120px; }
 .evidence-preview > span { top:8px; left:9px; padding:4px 7px; font-size:10px; }
 .verify-actions { display:grid; grid-template-columns:152px 1fr; gap:10px; margin-top:10px; }
 .touch-review { padding-top:10px; padding-bottom:6px; }

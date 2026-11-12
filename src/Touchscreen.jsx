@@ -22,7 +22,12 @@ export function TouchVerification({ returnCase, onBack, onContinue }) {
         <div className="identity-input"><input id="item-name" value={name} readOnly={!editing} onChange={e => setName(e.target.value)} /><button aria-label={editing ? 'Save item identity' : 'Edit item identity'} onClick={() => setEditing(!editing)}>{editing ? '✓' : '✎'}</button></div>
         <div className="weight-summary"><div className="touch-row"><strong>Weight comparison</strong><span className="touch-pill">99.4% Match</span></div><div className="touch-row"><span>Expected weight</span><strong>1.62 kg</strong></div><div className="touch-row"><span>Scale measured</span><strong>1.61 kg</strong></div></div>
       </section>
-      <div className="verify-cameras">{['Top-down camera', 'Side-angle camera'].map(label => <section className="verify-camera" key={label}><div className="touch-row"><strong>{label}</strong><span className="touch-pill">Verified</span></div><div className="evidence-preview" style={{backgroundImage: `url(${preview})`}}><span>▣ Illustrative camera preview</span></div></section>)}</div>
+      <div className="verify-cameras">
+        <section className="verify-camera">
+          <div className="touch-row"><strong>Camera</strong><span className="touch-pill">Verified</span></div>
+          <div className="evidence-preview" style={{backgroundImage: `url(${preview})`}}><span>▣ Illustrative camera preview</span></div>
+        </section>
+      </div>
     </div>
     <div className="verify-actions"><button className="touch-secondary" onClick={onBack}><TouchIcon /> Retry scan</button><button className="touch-primary" onClick={() => onContinue(name.trim() || returnCase.productName)}>Review decision →</button></div>
   </main>

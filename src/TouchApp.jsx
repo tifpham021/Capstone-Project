@@ -1,8 +1,7 @@
 import TouchIcon from './TouchIcon.jsx'
 import { useEffect, useRef, useState } from 'react'
 import chevron from './assets/figma/21c36.svg'
-import { TouchVerification as ItemInspection } from './Touchscreen.jsx'
-import ReviewDecision from './ReviewDecision.jsx'
+import { TouchReviewDecision as ReviewDecision, TouchVerification as ItemInspection } from './Touchscreen.jsx'
 import BarcodeScanner from './BarcodeScanner.jsx'
 import LoginPage from './LoginPage.jsx'
 import AccountDashboard, { ProfileAvatar } from './AccountDashboard.jsx'
@@ -20,6 +19,8 @@ import {
   createIdentifiedReturn,
   transitionReturn,
 } from './returnLifecycle.js'
+import { createReturn, searchOrders, setReturnStatus } from './api.js'
+import { fromServerReturn, pickItem, pickOrder } from './returnRecords.js'
 import './App.css'
 import './Touchscreen.css'
 
@@ -85,6 +86,7 @@ function ProfileMenu({ user, onOpenAccount, onSignOut }) {
 function Workstation({ session, onSignOut }) {
   const { user } = session
   const [screen, setScreen] = useState('identify')
+  const [inspectionPanel, setInspectionPanel] = useState('evidence')
   const [returnCase, setReturnCase] = useState(null)
   const [preferences, setPreferences] = useState(() => loadPreferences(user.email))
   const [history, setHistory] = useState(() => loadDecisionHistory(user.email))
@@ -112,14 +114,37 @@ function Workstation({ session, onSignOut }) {
       identified.sku = product.sku || product.id
     }
     setReturnCase(transitionReturn(identified, RETURN_STATUS.INSPECTION_IN_PROGRESS))
+    setInspectionPanel('evidence')
     setScreen('inspection')
   }
 
-  // Steps 2 and 3 are always reachable. Without an identified return, the
-  // sample return is loaded and moved forward so the page has case data.
+  const handleOrderLookup = async (identifier) => {
+    const orders = await searchOrders(identifier)
+    if (!orders.length) {
+      throw new Error(`No order matches “${identifier}”. Check the number and try again.`)
+    }
+
+    const order = pickOrder(orders, identifier)
+    const item = pickItem(order, identifier)
+    const created = await createReturn({
+      order_id: order.id,
+      order_item_id: item.id,
+      lookup_identifier: identifier,
+      station: user.station || null,
+      reviewer_email: user.email,
+    })
+    const started = await setReturnStatus(created.id, RETURN_STATUS.INSPECTION_IN_PROGRESS)
+    setReturnCase(fromServerReturn(started))
+    setInspectionPanel('evidence')
+    setScreen('inspection')
+  }
+
+  // Evidence and the final decision are two panels within the same
+  // "Inspect & decide" step on the touchscreen.
   const openStep = (step, currentReturn = returnCase) => {
     if (currentReturn === returnCase && canOpenStep(currentReturn, step)) {
-      setScreen(step)
+      setInspectionPanel(step === 'review' ? 'decision' : 'evidence')
+      setScreen(step === 'identify' ? 'identify' : 'inspection')
       return
     }
     if (step === 'identify') {
@@ -136,7 +161,8 @@ function Workstation({ session, onSignOut }) {
     }
 
     setReturnCase(nextReturn)
-    setScreen(step)
+    setInspectionPanel(step === 'review' ? 'decision' : 'evidence')
+    setScreen('inspection')
   }
 
   const continueToReview = (productName) => {
@@ -145,7 +171,7 @@ function Workstation({ session, onSignOut }) {
         ? transitionReturn(current, RETURN_STATUS.AWAITING_DECISION, { productName })
         : { ...current, productName }
     ))
-    setScreen('review')
+    setInspectionPanel('decision')
   }
 
   const completeReturn = (decision) => {
@@ -172,14 +198,21 @@ function Workstation({ session, onSignOut }) {
   const startNewReturn = () => {
     if (returnCase?.status === RETURN_STATUS.COMPLETED) {
       setReturnCase(null)
-      }
+    }
+    setInspectionPanel('evidence')
     setScreen('identify')
   }
 
   const resumeReturn = () => {
-    if (canOpenStep(returnCase, 'review')) setScreen('review')
-    else if (canOpenStep(returnCase, 'inspection')) setScreen('inspection')
-    else setScreen('identify')
+    if (canOpenStep(returnCase, 'review')) {
+      setInspectionPanel('decision')
+      setScreen('inspection')
+    } else if (canOpenStep(returnCase, 'inspection')) {
+      setInspectionPanel('evidence')
+      setScreen('inspection')
+    } else {
+      setScreen('identify')
+    }
   }
 
   const updatePreferences = (nextPreferences) => {
@@ -226,9 +259,13 @@ function Workstation({ session, onSignOut }) {
         />
       ) : screen === 'identify' ? (
       <main id="main" className="touch-main">
-        <BarcodeScanner autoStart={preferences.openCameraOnStart} onDetected={handleScannedCode} />
+        <BarcodeScanner
+          autoStart={preferences.openCameraOnStart}
+          onDetected={handleScannedCode}
+          onOrderLookup={handleOrderLookup}
+        />
       </main>
-      ) : screen === 'inspection' ? (
+      ) : inspectionPanel === 'evidence' ? (
         <ItemInspection
           returnCase={returnCase}
           onBack={() => openStep('identify')}
@@ -238,12 +275,11 @@ function Workstation({ session, onSignOut }) {
         <ReviewDecision
           returnCase={returnCase}
           onIdentify={() => openStep('identify')}
-          onBack={() => openStep('inspection')}
+          onBack={() => setInspectionPanel('evidence')}
           onSubmitDecision={completeReturn}
-          reviewerName={user.name}
         />
       )}
-      <footer className="touch-footer"><span>{screen === 'account' ? 'Preferences and decision history are saved in this browser, per account.' : screen === 'inspection' ? 'Demo station · Item verification' : screen === 'review' ? 'Demo station · Review decision' : 'Demo station · Ready to identify a return'}</span><span>ReturnScan / {user.station}</span></footer>
+      <footer className="touch-footer"><span>{screen === 'account' ? 'Preferences and decision history are saved in this browser, per account.' : screen === 'inspection' ? 'Demo station · Inspect & decide' : 'Demo station · Ready to identify a return'}</span><span>ReturnScan / {user.station}</span></footer>
     </div>
   )
 }

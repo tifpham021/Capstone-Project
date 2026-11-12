@@ -19,7 +19,7 @@ export async function scanRequest(path, options = {}) {
     return body
   } catch (error) {
     if (error.name === 'AbortError' && options.signal?.aborted) throw error
-    throw new Error(error.name === 'AbortError' ? 'Backend request timed out. Check the server.' : error.message)
+    throw new Error(error.name === 'AbortError' ? 'Backend request timed out. Check the server.' : error.message, { cause: error })
   } finally {
     clearTimeout(timer)
     options.signal?.removeEventListener('abort', abort)

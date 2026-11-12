@@ -24,27 +24,24 @@ Open the local URL printed in the terminal. Vite typically uses [http://localhos
 - `npm run preview` serves the production build locally after running `npm run build`.
 - `npm run lint` runs ESLint.
 
-## Computer vision backend
+## Functional camera inspection backend
 
-The Python/FastAPI service lives in [`backend/`](backend/README.md). It supports
-genuine-reference enrollment, one-image or batch verification, and discrepancy
-images. It combines frozen DINOv2 ViT-S/14, PatchCore-style patch comparisons,
-ALIKED + LightGlue and an OpenCV SIFT fallback. Apple Silicon, CUDA and CPU are
-supported. Model weights download on the first verification request.
+This branch (`local-ui-rectangle-alignment`) contains the working **Scan item**
+screen and one/two-camera Raspberry Pi capture jobs. It now uses **GPT-6 Luna
+with reasoning off** for decisions. The existing scan button, polling and remote
+API proxy remain in place. Each camera result shows the actual reference beside
+the boxed return image, plus damage/product/parts/counterfeit/evidence flags,
+confidence and processing time.
 
-```bash
-python3 -m venv backend/.venv
-source backend/.venv/bin/activate
-python -m pip install -r backend/requirements.txt
-python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --workers 1
+See [backend setup](backend/README.md) for Pi configuration and the API key.
+For a frontend running on the Mac, put this in `.env.local` and restart Vite:
+
+```dotenv
+RETURNSCAN_API_PROXY_TARGET=http://172.20.10.7:8000
 ```
 
-Open `http://127.0.0.1:8000/docs` to enroll reference photos and test uploads.
-`POST /v1/verify` returns an uncalibrated visual-match confidence, algorithm
-metrics, latency and URLs for discrepancy PNGs. See the backend README for curl
-and JavaScript examples, batch uploads, API-key protection and limitations.
-The React inspection/review screens still use their demo values; this change
-exposes the backend API without replacing the UI workflow or its sign-in system.
+Keep the OpenAI key on the backend, not in browser configuration. The previous
+CV engine is optional; it is not used as a silent fallback on API failure.
 
 ## Signing in
 

@@ -67,7 +67,7 @@ class CameraMonitor:
         self.thread = threading.Thread(target=self._run, name="camera-monitor", daemon=True)
 
     def request_scan(self):
-        from backend.service import ServiceError
+        from backend.common import ServiceError
 
         with self.lock:
             if self.state["status"] in {"starting", "error", "stopped"}:
@@ -82,7 +82,7 @@ class CameraMonitor:
             return copy.deepcopy(self.scans[scan_id])
 
     def scan_status(self, scan_id):
-        from backend.service import ServiceError
+        from backend.common import ServiceError
 
         with self.lock:
             if scan_id not in self.scans:

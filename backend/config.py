@@ -18,6 +18,11 @@ class Settings:
     max_pixels: int = 20_000_000
     max_batch_images: int = 4
     max_references: int = 8
+    decision_engine: str = "luna"
+    openai_api_key: str = field(default="", repr=False)
+    openai_model: str = "gpt-6-luna"
+    openai_reasoning: str = "none"
+    openai_timeout_seconds: float = 60
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -30,6 +35,10 @@ class Settings:
             else None,
             dino_source=os.getenv("RETURNSCAN_DINO_SOURCE") or None,
             api_key=os.getenv("RETURNSCAN_API_KEY", ""),
+            decision_engine=os.getenv("RETURNSCAN_DECISION_ENGINE", "luna"),
+            openai_api_key=os.getenv("OPENAI_API_KEY", ""),
+            openai_model=os.getenv("RETURNSCAN_OPENAI_MODEL", "gpt-6-luna"),
+            openai_reasoning=os.getenv("RETURNSCAN_OPENAI_REASONING", "none"),
             cors_origins=tuple(
                 filter(
                     None,

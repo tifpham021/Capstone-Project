@@ -1,0 +1,18 @@
+.visual-findings { margin-top: 20px; padding: 18px; border: 1px solid #dce5e7; border-radius: 14px; background: #fff; }
+.visual-findings-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+.visual-findings-heading h3 { margin: 0; font-size: 16px; }
+.visual-findings-heading > span { color: #52646d; font-size: 13px; white-space: nowrap; }
+.visual-flags { margin: 0; display: grid; gap: 8px; }
+.visual-flag { padding: 10px 12px; border-left: 3px solid #9baeb3; border-radius: 5px; background: #f6f8f9; }
+.visual-flag.present { border-color: #b84c38; background: #fff5f0; }
+.visual-flag.absent { border-color: #23806d; }
+.visual-flag dt { font-size: 14px; font-weight: 600; }
+.visual-flag dd { display: flex; flex-wrap: wrap; gap: 8px; margin: 3px 0 0; font-size: 12px; }
+.visual-flag dd > span { color: #52646d; }
+.visual-flag p { margin: 5px 0 0; font-size: 12px; line-height: 1.5; color: #52646d; }
+.visual-discrepancies { padding-left: 22px; margin-bottom: 0; font-size: 13px; line-height: 1.6; }
+.visual-discrepancies li { padding: 5px 0; }
+.visual-discrepancies span { color: #52646d; white-space: nowrap; }
+.visual-confidence-note { margin: 12px 0 0; color: #52646d; font-size: 12px; }
+.visual-retry { margin-top: 10px; padding: 8px 14px; background: #fff; border: 1px solid #bdcdd1; border-radius: 8px; cursor: pointer; }
+.comparison-images img, .evidence-review-grid figure img { object-fit: contain; }

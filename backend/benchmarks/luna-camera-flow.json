@@ -1,0 +1,47 @@
+{
+  "capture_source": "Recorded iPhone photos substituted for Picamera2 devices on the laptop; real CameraMonitor jobs, real Luna API inference, real Vite proxy. Physical Pi cameras not tested.",
+  "views": [
+    {
+      "camera_id": 0,
+      "model": "gpt-6-luna",
+      "reasoning_effort": "none",
+      "decision": "suspicious",
+      "verdict": "discrepancy_detected",
+      "confidence": 0.99,
+      "latency_ms": {
+        "preprocessing": 31.24625002965331,
+        "retrieval": 0.0,
+        "decision_api": 6528.86199997738,
+        "visualization": 256.50116603355855,
+        "total": 6816.609416040592
+      },
+      "images_checked_through_frontend_proxy": [
+        "reference_image_url",
+        "annotated_image_url",
+        "original_image_url",
+        "annotated_reference_image_url"
+      ]
+    },
+    {
+      "camera_id": 1,
+      "model": "gpt-6-luna",
+      "reasoning_effort": "none",
+      "decision": "consistent",
+      "verdict": "visually_consistent",
+      "confidence": 0.94,
+      "latency_ms": {
+        "preprocessing": 13.65675003034994,
+        "retrieval": 0.0,
+        "decision_api": 3717.0331670204177,
+        "visualization": 126.35395798133686,
+        "total": 3857.0438750321046
+      },
+      "images_checked_through_frontend_proxy": [
+        "reference_image_url",
+        "annotated_image_url",
+        "original_image_url",
+        "annotated_reference_image_url"
+      ]
+    }
+  ]
+}

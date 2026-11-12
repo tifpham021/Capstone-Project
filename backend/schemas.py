@@ -1,8 +1,55 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class InspectionFlag(StrictModel):
+    status: Literal["present", "absent", "unknown"]
+    confidence: float = Field(ge=0, le=1)
+    evidence: str
+
+
+class InspectionFlags(StrictModel):
+    damage: InspectionFlag
+    different_item: InspectionFlag
+    missing_parts: InspectionFlag
+    counterfeit_evidence: InspectionFlag
+    insufficient_visual_evidence: InspectionFlag
+
+
+NormalizedBox = Annotated[
+    list[Annotated[int, Field(strict=True, ge=0, le=1000)]],
+    Field(min_length=4, max_length=4),
+]
+
+
+class VisualDiscrepancy(StrictModel):
+    category: Literal["damage", "different_item", "missing_parts", "counterfeit_evidence"]
+    description: str
+    confidence: float = Field(ge=0, le=1)
+    reference_box: NormalizedBox | None
+    query_box: NormalizedBox | None
+
+    @model_validator(mode="after")
+    def ordered_boxes(self):
+        for box in (self.reference_box, self.query_box):
+            if box is not None and not (box[0] < box[2] and box[1] < box[3]):
+                raise ValueError("Bounding boxes must have positive width and height")
+        return self
+
+
+class VisualAssessment(StrictModel):
+    verdict: Literal["visually_consistent", "discrepancy_detected", "inconclusive"]
+    verdict_confidence: float = Field(ge=0, le=1)
+    flags: InspectionFlags
+    discrepancies: list[VisualDiscrepancy] = Field(max_length=5)
+    reference_index: int = Field(ge=0)
 
 
 class Thresholds(BaseModel):
@@ -64,19 +111,36 @@ class DiscrepancyRegion(BaseModel):
 
 
 class VerificationResponse(BaseModel):
+    decision_engine: Literal["cv", "luna"] = "cv"
+    model: str | None = None
+    reasoning_effort: str | None = None
+    verdict: Literal["visually_consistent", "discrepancy_detected", "inconclusive"] | None = None
+    verdict_confidence: float | None = Field(default=None, ge=0, le=1)
+    flags: InspectionFlags | None = None
+    discrepancies: list[VisualDiscrepancy] = Field(default_factory=list)
+    reference_index: int = 0
+    source_image_id: int | None = None
+    reference_image_url: str | None = None
+    annotated_image_url: str | None = None
+    annotated_reference_image_url: str | None = None
+    original_image_url: str | None = None
+    score_is_informational: bool = False
+    diagnostic_image_urls: dict[str, str] = Field(default_factory=dict)
     request_id: str
     confidence: float = Field(ge=0, le=1, description="Uncalibrated visual-match score")
     confidence_percent: float = Field(ge=0, le=100)
-    confidence_type: Literal["uncalibrated_visual_match"] = "uncalibrated_visual_match"
+    confidence_type: Literal["uncalibrated_visual_match", "uncalibrated_model_assessment"] = (
+        "uncalibrated_visual_match"
+    )
     decision: Literal["consistent", "suspicious", "inconclusive"]
-    identified_product: ProductSummary
+    identified_product: ProductSummary | None
     compared_product: ProductSummary
     expected_product_id: str | None
     identity_consistent: bool
     identity_ambiguous: bool = False
-    candidates: list[Candidate]
-    geometry: GeometryResult
-    patchcore: PatchCoreResult
+    candidates: list[Candidate] = Field(default_factory=list)
+    geometry: GeometryResult | None = None
+    patchcore: PatchCoreResult | None = None
     discrepancy_image_url: str | None = None
     capture_image_url: str | None = None
     normalized_reference_image_url: str | None = None
@@ -84,11 +148,13 @@ class VerificationResponse(BaseModel):
     background_removed: bool = False
     normalization_alignment: Literal["matched_geometry", "orientation_only"] | None = None
     heatmap_image_url: str | None = None
-    discrepancy_regions: list[DiscrepancyRegion]
-    region_coordinate_system: Literal["aligned_letterbox_448x448", "normalized_448x448"] = "aligned_letterbox_448x448"
+    discrepancy_regions: list[DiscrepancyRegion] = Field(default_factory=list)
+    region_coordinate_system: Literal[
+        "aligned_letterbox_448x448", "normalized_448x448", "normalized_reference_query_1000"
+    ] = "aligned_letterbox_448x448"
     latency_ms: dict[str, float]
-    reasons: list[str]
-    warnings: list[str]
+    reasons: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class BatchItem(BaseModel):

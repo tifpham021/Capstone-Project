@@ -10,9 +10,10 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import APIKeyHeader
 from starlette.exceptions import HTTPException
 
+from backend.catalog import IMAGE_ARTIFACTS
+from backend.common import ServiceError
 from backend.config import Settings
 from backend.schemas import BatchResponse, ProductSummary, VerificationResponse
-from backend.service import ServiceError, VerificationService
 
 IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
 LocalBackend = Literal["auto", "aliked", "sift"]
@@ -57,6 +58,18 @@ async def read_upload(file: UploadFile, settings: Settings) -> bytes:
 
 def create_app(settings: Settings | None = None, service=None) -> FastAPI:
     settings = settings or Settings.from_env()
+    if service is None:
+        if settings.decision_engine == "luna":
+            from backend.vision import LunaVerificationService
+
+            service = LunaVerificationService(settings)
+        elif settings.decision_engine == "cv":
+            from backend.service import VerificationService
+
+            service = VerificationService(settings)
+        else:
+            raise ValueError("RETURNSCAN_DECISION_ENGINE must be luna or cv")
+
     @asynccontextmanager
     async def lifespan(app):
         monitor = None
@@ -71,14 +84,17 @@ def create_app(settings: Settings | None = None, service=None) -> FastAPI:
         finally:
             if monitor is not None:
                 await run_in_threadpool(monitor.stop)
+            client = getattr(service, "client", None)
+            if client is not None and hasattr(client, "close"):
+                client.close()
 
     app = FastAPI(
         lifespan=lifespan,
-        title="ReturnScan CV Backend",
-        version="1.0.0",
-        description="DINOv2 retrieval, PatchCore-style discrepancies and ALIKED/LightGlue geometry. Scores are not calibrated authenticity probabilities.",
+        title="ReturnScan Camera Inspection Backend",
+        version="2.0.0",
+        description="Live Pi camera capture with Luna visual decisions and discrepancy boxes. Confidence is not an authenticity probability.",
     )
-    app.state.verifier = service if service is not None else VerificationService(settings)
+    app.state.verifier = service
     app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_request_bytes)
     app.add_middleware(
         CORSMiddleware,
@@ -110,7 +126,19 @@ def create_app(settings: Settings | None = None, service=None) -> FastAPI:
         return {
             "status": "ok",
             "models_loaded": app.state.verifier.loaded,
-            "device": str(app.state.verifier.models.device),
+            "decision_engine": getattr(service, "engine", "cv"),
+            "model": settings.openai_model
+            if getattr(service, "engine", "cv") == "luna"
+            else "dinov2_vits14",
+            "reasoning_effort": settings.openai_reasoning
+            if getattr(service, "engine", "cv") == "luna"
+            else None,
+            "configured": bool(settings.openai_api_key)
+            if getattr(service, "engine", "cv") == "luna"
+            else True,
+            "device": "api"
+            if getattr(service, "engine", "cv") == "luna"
+            else str(service.models.device),
             "authentication_enabled": bool(settings.api_key),
         }
 
@@ -168,10 +196,16 @@ def create_app(settings: Settings | None = None, service=None) -> FastAPI:
             for file in references:
                 await file.close()
 
-    @app.put("/v1/products/{product_id}/references", response_model=ProductSummary, dependencies=protected)
+    @app.put(
+        "/v1/products/{product_id}/references",
+        response_model=ProductSummary,
+        dependencies=protected,
+    )
     async def replace_references(
         product_id: str,
-        references: Annotated[list[UploadFile], File(description="1-8 replacement reference photos")],
+        references: Annotated[
+            list[UploadFile], File(description="1-8 replacement reference photos")
+        ],
         name: Annotated[str | None, Form(max_length=200)] = None,
     ):
         try:
@@ -181,7 +215,9 @@ def create_app(settings: Settings | None = None, service=None) -> FastAPI:
                 raise ServiceError("Product name cannot be blank")
             images = [await read_upload(file, settings) for file in references]
             return await run_in_threadpool(
-                app.state.verifier.replace_references, product_id, images,
+                app.state.verifier.replace_references,
+                product_id,
+                images,
                 name.strip() if name is not None else None,
             )
         finally:
@@ -255,7 +291,7 @@ def create_app(settings: Settings | None = None, service=None) -> FastAPI:
 
     @app.get("/v1/results/{request_id}/{filename}", dependencies=protected)
     def result_image(request_id: str, filename: str):
-        if filename not in {"capture.png", "reference.png", "normalized.png", "discrepancy.png", "heatmap.png"}:
+        if filename not in IMAGE_ARTIFACTS | {"capture.png", "normalized.png"}:
             raise ServiceError("Image not found", 404)
         return FileResponse(
             app.state.verifier.artifact(request_id, filename),

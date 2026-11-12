@@ -2,10 +2,7 @@ fastapi>=0.115,<1
 uvicorn[standard]>=0.34,<1
 python-multipart>=0.0.20,<1
 pydantic>=2.10,<3
-torch>=2.7,<3
-torchvision>=0.22,<1
 numpy>=2.0,<3
 Pillow>=11,<13
 opencv-python-headless>=4.11,<5
-kornia>=0.8,<1
-lightglue @ git+https://github.com/cvg/LightGlue.git@5a650c444718caffc2669dc0094cde908f42dd73
+httpx>=0.28,<1

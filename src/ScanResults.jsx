@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { artifactUrl } from './scanApi.js'
 import './ScanResults.css'
+import VisualFindings from './VisualFindings.jsx'
 
 function ResultImage({ path, label }) {
   const [failed, setFailed] = useState(false)
@@ -27,6 +28,22 @@ export default function ScanResults({ scan }) {
           <h3>Camera {cameraId + 1}</h3>
           {error ? <p className="scan-error" role="alert">{error}</p> : result ? (
             <>
+              {result.decision_engine === 'luna' ? (
+                <>
+                  <div className="scan-normalized">
+                    <ResultImage key={`${result.request_id}-reference`} path={result.reference_image_url} label="Genuine reference" />
+                    <ResultImage key={`${result.request_id}-annotated`} path={result.annotated_image_url} label="Returned item · Differences boxed" />
+                  </div>
+                  <div className="scan-summary">
+                    <strong>{result.confidence_percent.toFixed(1)}% decision confidence</strong>
+                    <span className={`scan-decision ${result.decision}`}>{result.decision === 'consistent' ? 'Visually consistent' : result.decision === 'suspicious' ? 'Differences detected' : 'Needs review'}</span>
+                    <span>{result.compared_product.name}</span>
+                  </div>
+                  <VisualFindings verification={result} />
+                  {result.original_image_url && <p><a href={artifactUrl(result.original_image_url)} target="_blank" rel="noreferrer">Open original capture</a></p>}
+                </>
+              ) : (
+                <>
               {result.normalized_reference_image_url && result.normalized_image_url ? (
                 <div className="scan-normalized">
                   <ResultImage key={`${result.request_id}-reference`} path={result.normalized_reference_image_url} label="Genuine reference" />
@@ -57,6 +74,8 @@ export default function ScanResults({ scan }) {
               ) : <p>Discrepancy highlighting requires a valid LightGlue alignment and successful background removal. Matching used: {result.geometry.backend}.</p>}
               <ul>{result.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
               {result.warnings.length > 0 && <ul className="scan-warnings">{result.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}
+                </>
+              )}
             </>
           ) : <p role="alert">No result returned for this camera.</p>}
         </article>

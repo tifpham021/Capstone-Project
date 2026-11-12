@@ -1,19 +1,14 @@
 from __future__ import annotations
 
-import io
-import json
 import logging
-import re
 import threading
 import time
 import uuid
-import warnings
 from dataclasses import dataclass, field
-from pathlib import Path
 
 import cv2
 import numpy as np
-from PIL import Image, ImageEnhance, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageEnhance
 
 from backend.algorithms import (
     Features,
@@ -24,55 +19,13 @@ from backend.algorithms import (
     sift_match,
 )
 from backend.alignment import RectangleError, RectangleView, rectify_rectangle
+from backend.catalog import CatalogStore, write_json
+from backend.common import ServiceError, decode_image  # noqa: F401
 from backend.config import Settings
-from backend.schemas import ProductSummary, Thresholds, VerificationResponse
+from backend.schemas import Thresholds, VerificationResponse
 from backend.visualization import _box, foreground, major_discrepancies, normalized_pair
 
 LOG = logging.getLogger(__name__)
-PRODUCT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
-RESULT_ID = re.compile(r"[a-f0-9]{32}\Z")
-ALLOWED_ARTIFACTS = {"capture.png", "reference.png", "normalized.png", "discrepancy.png", "heatmap.png", "result.json"}
-
-
-class ServiceError(Exception):
-    def __init__(self, detail: str, status_code: int = 422):
-        super().__init__(detail)
-        self.status_code = status_code
-
-
-def decode_image(data: bytes, settings: Settings) -> Image.Image:
-    if not data:
-        raise ServiceError("Image is empty", 400)
-    if len(data) > settings.max_upload_bytes:
-        raise ServiceError("Image exceeds the upload limit", 413)
-    try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", Image.DecompressionBombWarning)
-            with Image.open(io.BytesIO(data)) as source:
-                if source.format not in {"JPEG", "PNG", "WEBP"}:
-                    raise ServiceError("Image must be JPEG, PNG or WebP", 415)
-                # Check the header BEFORE decoding the full pixel allocation.
-                if source.width * source.height > settings.max_pixels:
-                    raise ServiceError("Image exceeds the pixel limit", 413)
-                if min(source.size) < 64:
-                    raise ServiceError("Image must be at least 64 x 64 pixels")
-                source.load()
-                oriented = ImageOps.exif_transpose(source)
-                oriented.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
-                rgba = oriented.convert("RGBA")
-                background = Image.new("RGBA", rgba.size, "white")
-                image = Image.alpha_composite(background, rgba).convert("RGB")
-    except (Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
-        raise ServiceError("Image exceeds the pixel safety limit", 413) from exc
-    except (UnidentifiedImageError, OSError, ValueError) as exc:
-        raise ServiceError("File is not a readable image", 415) from exc
-    return image
-
-
-def write_json(destination: Path, value):
-    temporary = destination.with_suffix(".tmp")
-    temporary.write_text(json.dumps(value, indent=2, allow_nan=False), encoding="utf-8")
-    temporary.replace(destination)
 
 
 @dataclass
@@ -131,16 +84,14 @@ def evaluate(similarity, geometry, anomaly, alignment_valid, identity_consistent
     return confidence, normality, decision, reasons
 
 
-
-class VerificationService:
+class VerificationService(CatalogStore):
     """Single-process catalog and serialized inference; no data leaves this server."""
 
     def __init__(self, settings: Settings, models=None):
         self.settings = settings
         if settings.alignment_method not in {"rectangle", "features"}:
             raise ValueError("RETURNSCAN_ALIGNMENT_METHOD must be rectangle or features")
-        self.settings.data_dir.mkdir(parents=True, exist_ok=True)
-        self.catalog_path = self.settings.data_dir / "catalog.json"
+        super().__init__(settings)
         self.models = models if models is not None else Models(settings)
         self._lock = threading.RLock()
         self._index: dict[str, IndexedProduct] = {}
@@ -148,89 +99,6 @@ class VerificationService:
     @property
     def loaded(self):
         return self.models.loaded
-
-    def _catalog(self):
-        if not self.catalog_path.exists():
-            return {"products": []}
-        try:
-            catalog = json.loads(self.catalog_path.read_text(encoding="utf-8"))
-            if not isinstance(catalog.get("products"), list):
-                raise ValueError("missing products list")
-            return catalog
-        except (ValueError, OSError, AttributeError) as exc:
-            raise ServiceError(
-                "Catalog is unreadable; check the server data directory", 503
-            ) from exc
-
-    @staticmethod
-    def summary(product):
-        return ProductSummary(
-            id=product["id"],
-            name=product["name"],
-            sku=product["sku"],
-            barcode=product.get("barcode"),
-            reference_count=len(product["references"]),
-        ).model_dump()
-
-    def products(self):
-        with self._lock:
-            return [self.summary(item) for item in self._catalog()["products"]]
-
-    def register(
-        self, product_id: str, name: str, sku: str, barcode: str | None, images: list[bytes]
-    ):
-        if not PRODUCT_ID.fullmatch(product_id):
-            raise ServiceError("product_id must be 1-64 letters, digits, underscores or hyphens")
-        if not 1 <= len(images) <= self.settings.max_references:
-            raise ServiceError(f"Supply 1-{self.settings.max_references} genuine reference images")
-        decoded = [decode_image(data, self.settings) for data in images]
-        with self._lock:
-            catalog = self._catalog()
-            if any(p["id"] == product_id for p in catalog["products"]):
-                raise ServiceError("Product already exists; use a different product_id", 409)
-            if barcode and any(p.get("barcode") == barcode for p in catalog["products"]):
-                raise ServiceError("Barcode already belongs to another product", 409)
-            directory = self.settings.data_dir / "references" / uuid.uuid4().hex
-            directory.mkdir(parents=True)
-            references = []
-            for i, image in enumerate(decoded):
-                destination = directory / f"{i}.png"
-                image.save(destination)  # Sanitized RGB, resized, no source metadata.
-                references.append(str(destination.relative_to(self.settings.data_dir)))
-            product = {
-                "id": product_id,
-                "name": name,
-                "sku": sku,
-                "barcode": barcode,
-                "references": references,
-                "thresholds": Thresholds().model_dump(),
-            }
-            catalog["products"].append(product)
-            write_json(self.catalog_path, catalog)
-            return self.summary(product)
-
-    def replace_references(self, product_id, images, name=None):
-        if not 1 <= len(images) <= self.settings.max_references:
-            raise ServiceError(f"Supply 1-{self.settings.max_references} genuine references")
-        decoded = [decode_image(data, self.settings) for data in images]
-        with self._lock:
-            catalog = self._catalog()
-            product = next((p for p in catalog["products"] if p["id"] == product_id), None)
-            if product is None:
-                raise ServiceError("Product not found", 404)
-            directory = self.settings.data_dir / "references" / uuid.uuid4().hex
-            directory.mkdir(parents=True)
-            references = []
-            for index, image in enumerate(decoded):
-                path = directory / f"{index}.png"
-                image.save(path)
-                references.append(str(path.relative_to(self.settings.data_dir)))
-            product["references"] = references
-            if name:
-                product["name"] = name
-            write_json(self.catalog_path, catalog)
-            self._index.pop(product_id, None)
-            return self.summary(product)
 
     def _load_index(self, catalog):
         self.models.load()
@@ -255,13 +123,19 @@ class VerificationService:
                         try:
                             reference.rectangle = rectify_rectangle(image, mask)
                             view = reference.rectangle
-                            reference.rectangle_features = self.models.features(view.image, view.mask)
+                            reference.rectangle_features = self.models.features(
+                                view.image, view.mask
+                            )
                             reference.rectangle_variants = [reference.rectangle_features] + [
-                                self.models.features(ImageEnhance.Brightness(view.image).enhance(factor), view.mask)
+                                self.models.features(
+                                    ImageEnhance.Brightness(view.image).enhance(factor), view.mask
+                                )
                                 for factor in (0.90, 1.10)
                             ]
                         except RectangleError:
-                            LOG.warning("Reference has no usable foreground rectangle: %s", relative)
+                            LOG.warning(
+                                "Reference has no usable foreground rectangle: %s", relative
+                            )
                 indexed.references.append(reference)
             if not indexed.references:
                 raise ServiceError("Catalog product has no reference images", 503)
@@ -278,12 +152,19 @@ class VerificationService:
             candidates = []
             try:
                 for turn in range(4):
-                    view = rectify_rectangle(image, mask, size=ref.rectangle.image.size, quarter_turns=turn)
+                    view = rectify_rectangle(
+                        image, mask, size=ref.rectangle.image.size, quarter_turns=turn
+                    )
                     features = self.models.features(view.image, view.mask)
                     tokens = features.mask & ref.rectangle_features.mask
                     if not bool(tokens.any()):
                         continue
-                    appearance = float((features.patches[tokens] * ref.rectangle_features.patches[tokens]).sum(-1).mean().cpu())
+                    appearance = float(
+                        (features.patches[tokens] * ref.rectangle_features.patches[tokens])
+                        .sum(-1)
+                        .mean()
+                        .cpu()
+                    )
                     common = (view.mask > 0) & (ref.rectangle.mask > 0)
                     union = (view.mask > 0) | (ref.rectangle.mask > 0)
                     iou = int(common.sum()) / max(1, int(union.sum()))
@@ -369,7 +250,13 @@ class VerificationService:
             ]
             rectangle = None
             if self.settings.alignment_method == "rectangle":
-                ordered = sorted(target.references, key=lambda r: float((query.global_feature * r.features.global_feature).sum().cpu()), reverse=True)
+                ordered = sorted(
+                    target.references,
+                    key=lambda r: float(
+                        (query.global_feature * r.features.global_feature).sum().cpu()
+                    ),
+                    reverse=True,
+                )
                 rectangle = self._rectangle_alignment(image, ordered)
                 if rectangle is not None:
                     ref, rectangle_view, valid, iou = rectangle
@@ -379,7 +266,9 @@ class VerificationService:
                     ref = ordered[0]
                     aligned, valid, alignment_valid = image, None, False
                     geometry = LocalMatch("rectangle", 0, 0, 0, 0, 0, None)
-                warnings_list.append("Rectangle alignment normalizes foreground outlines; internal feature correspondence is not verified.")
+                warnings_list.append(
+                    "Rectangle alignment normalizes foreground outlines; internal feature correspondence is not verified."
+                )
             else:
                 matches: list[tuple[Reference, LocalMatch]] = []
                 if local_backend != "sift":
@@ -414,7 +303,8 @@ class VerificationService:
             aligned_features = self.models.features(aligned, valid)
             references = (
                 (ref.rectangle_variants if rectangle is not None else ref.variants)
-                if alignment_valid else [r.features for r in target.references]
+                if alignment_valid
+                else [r.features for r in target.references]
             )
             anomaly, _ = patch_distances(aligned_features, references, alignment_valid)
             patch_done = time.perf_counter()
@@ -455,7 +345,9 @@ class VerificationService:
                 union = ref.rectangle.mask | rectangle_view.mask
                 bounds = cv2.boundingRect(union)
                 reference_view = _box(np.asarray(ref.rectangle.image), ref.rectangle.mask, bounds)
-                normalized_view = _box(np.asarray(rectangle_view.image), rectangle_view.mask, bounds)
+                normalized_view = _box(
+                    np.asarray(rectangle_view.image), rectangle_view.mask, bounds
+                )
                 background_removed = True
             else:
                 reference_view, normalized_view, background_removed = normalized_pair(
@@ -465,12 +357,18 @@ class VerificationService:
             normalized_view.save(destination / "normalized.png")
             discrepancy_url = None
             regions = []
-            if geometry.backend in {"ALIKED+LightGlue", "rectangle"} and alignment_valid and background_removed:
+            if (
+                geometry.backend in {"ALIKED+LightGlue", "rectangle"}
+                and alignment_valid
+                and background_removed
+            ):
                 discrepancy, regions = major_discrepancies(reference_view, normalized_view)
                 discrepancy.save(destination / "discrepancy.png")
                 discrepancy_url = f"/v1/results/{request_id}/discrepancy.png"
             if not background_removed:
-                warnings_list.append("Background removal could not isolate both products. Retake with a contrasting background and space around the item.")
+                warnings_list.append(
+                    "Background removal could not isolate both products. Retake with a contrasting background and space around the item."
+                )
             rendered = time.perf_counter()
             response = VerificationResponse(
                 request_id=request_id,
@@ -492,8 +390,14 @@ class VerificationService:
                     "score": geometry.score,
                     "alignment_valid": alignment_valid,
                     "alignment_method": self.settings.alignment_method,
-                    "alignment_quality": ("outline_only" if rectangle is not None else "feature_verified") if alignment_valid else "failed",
-                    "rotation_degrees": rectangle_view.rotation_degrees if rectangle is not None else 0,
+                    "alignment_quality": (
+                        "outline_only" if rectangle is not None else "feature_verified"
+                    )
+                    if alignment_valid
+                    else "failed",
+                    "rotation_degrees": rectangle_view.rotation_degrees
+                    if rectangle is not None
+                    else 0,
                 },
                 patchcore={
                     "anomaly_score": anomaly,
@@ -507,7 +411,9 @@ class VerificationService:
                 normalized_reference_image_url=f"/v1/results/{request_id}/reference.png",
                 normalized_image_url=f"/v1/results/{request_id}/normalized.png",
                 background_removed=background_removed,
-                normalization_alignment="matched_geometry" if alignment_valid else "orientation_only",
+                normalization_alignment="matched_geometry"
+                if alignment_valid
+                else "orientation_only",
                 heatmap_image_url=None,
                 discrepancy_regions=regions,
                 region_coordinate_system="normalized_448x448",
@@ -526,11 +432,3 @@ class VerificationService:
             ).model_dump()
             write_json(destination / "result.json", response)
             return response
-
-    def artifact(self, request_id: str, filename: str) -> Path:
-        if not RESULT_ID.fullmatch(request_id) or filename not in ALLOWED_ARTIFACTS:
-            raise ServiceError("Result not found", 404)
-        destination = self.settings.data_dir / "results" / request_id / filename
-        if not destination.is_file():
-            raise ServiceError("Result not found", 404)
-        return destination

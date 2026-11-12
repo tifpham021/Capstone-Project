@@ -62,7 +62,7 @@ export default function ItemInspection({ returnCase, onBack, onContinue, scan, o
         </section>
         <section className="scan-panel" aria-labelledby="scan-heading" aria-busy={busy}>
           <div className="scan-toolbar">
-            <div><h2 id="scan-heading">Camera inspection</h2><p>Keep the item still with its surfaces clearly visible. The first scan may take longer while models load.</p></div>
+            <div><h2 id="scan-heading">Camera inspection</h2><p>Keep the item still with its surfaces clearly visible. Each camera view is inspected against the expected product references.</p></div>
             <button type="button" className="continue-button" disabled={busy} onClick={startScan}>
               {busy ? 'Scanning…' : scan?.results ? 'Scan again' : 'Scan item'}
             </button>

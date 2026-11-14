@@ -15,7 +15,7 @@ const decisions = [
   {
     id: 'approve',
     title: 'Approve return',
-    description: 'Issue the $129.00 refund and close the case.',
+    description: 'Approve the return and close the case.',
     badge: 'Refund',
   },
   {
@@ -149,7 +149,7 @@ function ReviewDecision({ scan, returnCase, onIdentify, onBack, onSubmitDecision
                 <div><dt>Order</dt><dd>#{returnCase.orderNumber}</dd></div>
                 <div><dt>SKU</dt><dd>{returnCase.sku}</dd></div>
                 <div><dt>Serial</dt><dd>{returnCase.serialNumber}</dd></div>
-                <div><dt>Refund</dt><dd>${returnCase.refundAmount.toFixed(2)}</dd></div>
+                <div><dt>Refund</dt><dd>{returnCase.refundAmount == null ? 'Not on file' : `$${returnCase.refundAmount.toFixed(2)}`}</dd></div>
                 <div><dt>Customer</dt><dd>{returnCase.customerName}</dd></div>
               </dl>
 

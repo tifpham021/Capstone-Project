@@ -22,8 +22,9 @@ Camera setup remains `RETURNSCAN_CAMERAS_ENABLED=1`, `RETURNSCAN_CAMERA_IDS=0,1`
 (or a single ID), `RETURNSCAN_CAMERA_PRODUCT_ID=<enrolled product ID>`, and
 `RETURNSCAN_CAMERA_AUTO_SCAN=0` for button-only scans. Existing Picamera2 and
 OpenCV capture requirements still apply. Unavailable cameras are skipped if
-another can start. Set the expected product to avoid a separate catalog-identification
-API call for each camera. Do not enable an automatic paid scan loop unless desired.
+another can start. Order-based scans use the order's product instead of the
+station-wide `RETURNSCAN_CAMERA_PRODUCT_ID`. That setting still applies to legacy
+scans without an order. Do not enable an automatic paid scan loop unless desired.
 
 Luna inference uses the OpenAI API; it needs outbound internet and a server-side
 key on the **machine running this backend**. It does not need a local GPU,
@@ -48,10 +49,32 @@ address; configure firewall/access control before exposing the backend elsewhere
 
 ## Request flow and response
 
-1. **Scan item** posts `/v1/cameras/scan`; the Pi captures fresh frames.
-2. The camera worker calls the Luna verifier for each available view.
-3. The frontend polls `/v1/cameras/scans/{scan_id}` until completion.
-4. `ScanResults` renders the reference beside the boxed return image for each camera.
+1. **Scan item** opens a modal. Enter **1** and submit with **Scan item** or Enter.
+2. Submission uses `GET /v1/orders/1` to load the black iPhone 15, its reference count and **171 g** expected weight.
+3. A valid order immediately posts `{"order_number":"1"}` to `/v1/cameras/scan`; the Pi captures fresh frames. There is no separate lookup/confirmation step. An unknown order stays in the modal with an error and does not capture.
+4. The worker compares each view against `iphone-15` references and takes one simulated weight reading for the entire scan.
+5. The frontend polls `/v1/cameras/scans/{scan_id}` and renders the reference/boxed return image, weight difference and combined check result. The review screen retains the same reading.
+
+The backend automatically creates `orders.sqlite3` inside `RETURNSCAN_DATA_DIR`
+(default `backend/.runtime`) with demo order **1**. SQLite uses Python's standard
+library; no database server or additional package is needed. If `iphone-15` is
+already enrolled, its reference photos are preserved. Otherwise a bundled demo
+reference is enrolled automatically; see [sample attribution](samples/README.md).
+Replace that photo with your own verified reference using the enrollment routes
+or `backend/enroll_iphone15.py`.
+
+The **demo** sensor samples uniformly within ±5% of 171 g: **162.45–179.55 g**.
+The weight tolerance is also ±5%, so this simulated reading passes by design.
+It demonstrates the comparison UI; it is not a real scale measurement. Weight is
+sampled once per scan and stays fixed during polling. A visual mismatch or failed
+weight check makes the combined result suspicious; missing or inconclusive visual
+results require review. Passing weight never overrides a visual mismatch.
+
+Completed jobs add `order`, `weight` and `decision` to the existing per-camera
+response. `weight` contains expected/measured grams, signed differences, tolerance,
+`within_tolerance` and `sensor_mode: "demo"`. The order is snapshotted when the job
+is queued, so later database edits cannot change an in-progress scan. Calls without
+a JSON body remain supported for existing camera clients, without an order/weight check.
 
 Results include `verdict`, `verdict_confidence`, five flags, discrepancies with
 normalized 0–1000 boxes, the selected reference index and stage latency. Flags

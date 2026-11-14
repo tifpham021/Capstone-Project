@@ -44,6 +44,11 @@ class VisualDiscrepancy(StrictModel):
         return self
 
 
+class WeightEstimate(StrictModel):
+    estimated_weight_g: float | None = Field(ge=1, le=1000000, allow_inf_nan=False)
+    explanation: str = Field(max_length=500)
+
+
 class VisualAssessment(StrictModel):
     verdict: Literal["visually_consistent", "discrepancy_detected", "inconclusive"]
     verdict_confidence: float = Field(ge=0, le=1)

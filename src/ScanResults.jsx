@@ -1,3 +1,4 @@
+import SimulatedWeight from './SimulatedWeight.jsx'
 import { useState } from 'react'
 import { artifactUrl } from './scanApi.js'
 import './ScanResults.css'
@@ -23,6 +24,7 @@ export default function ScanResults({ scan }) {
   return (
     <div className="scan-results">
       <p>Captured {new Date(scan.captured_at * 1000).toLocaleString()}. Each camera is compared independently with enrolled references.</p>
+      <SimulatedWeight key={scan.scan_id || scan.captured_at} estimate={scan.weight_estimate} error={scan.weight_estimate_error} />
       {scan.results.map(({ camera_id: cameraId, result, error }) => (
         <article className="scan-view" key={`${scan.scan_id}-${cameraId}`}>
           <h3>Camera {cameraId + 1}</h3>

@@ -94,3 +94,28 @@ npm run build
 Camera tests use fake Picamera2 devices to cover one/two-camera capture and
 missing-camera fallback. Provider tests cover the real request schema, flags,
 boxes, PNG delivery and API failure behavior without spending API credits.
+
+## Simulated weight display
+
+After a camera scan returns a product comparison, the Luna engine makes **one
+additional API request per scan** to estimate the actual returned object's mass
+in grams using a captured view, catalog reference and visual inspection findings.
+Suspected replicas and different items also get a weight request, even when
+`identified_product` is null: `compared_product` supplies reference context only.
+A suspicious camera view is preferred over a consistent view. Luna is instructed
+to estimate the visible replica/mockup rather than substitute the genuine item's
+specification, without assuming that every mismatch is 3D-printed plastic.
+This adds API latency and usage. No estimate is requested if no view returns any
+product context. Weight-estimation failure leaves visual results available;
+uncertain materials, contents or construction can produce a null estimate.
+
+The scan response includes `weight_estimate` (`estimated_weight_g`, `explanation`,
+`product_id`, `product_name`, `source: luna_estimate`, `simulated: true`), or
+`weight_estimate_error`. The inspection and review screens label the display
+**Measured weight** for demo presentation, without a simulation badge. The value
+is still an AI estimate, not a hardware measurement. Its number fluctuates every 900 ms within ±0.5%
+of the base estimate, capped at ±5 g. The fluctuations are generated locally;
+they do not trigger further API requests. A new scan resets the display.
+
+This is a prototype display, not a scale measurement or a verified specification.
+It does not affect visual decisions, weight tolerances or refund approval.

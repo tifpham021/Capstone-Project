@@ -126,8 +126,39 @@ class CameraMonitor:
             except Exception as exc:
                 LOG.exception("Camera %s verification failed", camera_id)
                 results.append({"camera_id": camera_id, "error": str(exc)})
-        return {"captured_at": captured_at, "results": results,
-                "aggregation": "independent_images"}
+        completed = {"captured_at": captured_at, "results": results,
+                     "aggregation": "independent_images"}
+        # One estimate of the returned object, including mismatches and suspected replicas.
+        # Never feed simulated mass into verification or a return decision.
+        estimator = getattr(self.verifier, "estimate_weight", None)
+        if callable(estimator) and not self.stop_event.is_set():
+            # Prefer a view showing a discrepancy over one that appears genuine.
+            views = sorted(zip(images, results), key=lambda pair: (
+                pair[1].get("result", {}).get("decision") == "suspicious"
+            ), reverse=True)
+            for image, view in views:
+                inspection = view.get("result", {})
+                product = inspection.get("identified_product") or inspection.get("compared_product")
+                if not product:
+                    continue
+                try:
+                    completed["weight_estimate"] = {
+                        **estimator(image, product, inspection={
+                            key: inspection[key] for key in
+                            ("decision", "verdict", "flags", "discrepancies", "identity_consistent")
+                            if key in inspection
+                        }),
+                        "source": "luna_estimate",
+                        "simulated": True,
+                        "product_id": product["id"],
+                        "product_name": (product["name"] if inspection.get("identified_product")
+                                         else f"Returned item (reference: {product['name']})"),
+                    }
+                except Exception:
+                    LOG.exception("Weight estimate failed; retaining visual scan results")
+                    completed["weight_estimate_error"] = "Weight estimate unavailable. Scan again to retry."
+                break
+        return completed
 
     def _run(self):
         cameras = []

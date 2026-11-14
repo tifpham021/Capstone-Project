@@ -29,3 +29,11 @@
 .scan-warnings { color: #805b16; }
 .continue-button:disabled, .save-button:disabled { opacity: .6; cursor: wait; }
 @media (max-width: 700px) { .scan-normalized, .scan-images { grid-template-columns: 1fr; } .scan-panel { padding: 16px; } }
+.simulated-weight { padding:18px 22px; margin:18px 0; border:1px solid #b9d6ce; border-radius:12px; background:#eef7f3; color:#173c41; }
+.simulated-weight > div { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.simulated-weight h3 { margin:0; }
+.weight-demo-badge { font-size:12px; font-weight:700; padding:5px 10px; border-radius:20px; background:#d8eae3; }
+.simulated-weight output { display:block; font-size:42px; font-weight:700; font-variant-numeric:tabular-nums; margin:10px 0; }
+.simulated-weight output small { font-size:20px; }
+.simulated-weight p { margin:6px 0; font-size:13px; }
+.simulated-weight .weight-demo-note { color:#445e57; font-weight:600; }

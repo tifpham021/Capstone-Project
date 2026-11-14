@@ -30,6 +30,11 @@ probability. Use unknown for ambiguous damage or counterfeit status. Set insuffi
 visual evidence to present if these images prevent a meaningful visible-product
 comparison; unseen internals alone do not make a clear exterior comparison insufficient.
 Return at most five observable discrepancies with concise descriptions and tight boxes.
+For each key product region that does not match, supply query_box around the affected
+region of the returned item and reference_box around its corresponding reference
+region when visible. Prioritize damage and different-item design differences.
+For a missing feature, box its expected location when that location is visible.
+Box only the relevant product region, not the background or the entire photo.
 Choose reference_index (zero based) for the closest comparable reference view. Boxes
 refer to that reference and the final query, independently normalized 0..1000 across
 each image's full width and height: [xmin,ymin,xmax,ymax], top-left origin. Use null

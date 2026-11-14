@@ -36,7 +36,7 @@ the backend for the comparison request, which sets `store=false`.
 On the Mac, set this in `.env.local`, then restart Vite:
 
 ```dotenv
-RETURNSCAN_API_PROXY_TARGET=http://172.20.10.7:8000
+RETURNSCAN_API_PROXY_TARGET=http://100.70.178.175:8000
 ```
 
 The existing Vite `/v1` proxy forwards both scan/poll requests and protected

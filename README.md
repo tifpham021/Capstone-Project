@@ -37,7 +37,7 @@ See [backend setup](backend/README.md) for Pi configuration and the API key.
 For a frontend running on the Mac, put this in `.env.local` and restart Vite:
 
 ```dotenv
-RETURNSCAN_API_PROXY_TARGET=http://172.20.10.7:8000
+RETURNSCAN_API_PROXY_TARGET=http://100.70.178.175:8000
 ```
 
 Keep the OpenAI key on the backend, not in browser configuration. The previous

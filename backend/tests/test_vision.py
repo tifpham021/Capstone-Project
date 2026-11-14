@@ -208,3 +208,31 @@ def test_provider_truncation_is_not_persisted(setup):
     )
     assert response.status_code == 502
     assert not (service.settings.data_dir / "results").exists()
+
+
+def test_camera_crop_is_same_framing_in_provider_and_display(setup):
+    import base64
+
+    import cv2
+    import numpy as np
+
+    from backend.camera_crop import adaptive_crop
+
+    client, service, state = setup
+    enroll(client)
+    state['assessment'] = assessment(True)
+    frame = np.full((960, 1280, 3), 150, dtype=np.uint8)
+    frame[580:700, 520:760] = 40
+    crop = adaptive_crop(frame)
+    ok, encoded = cv2.imencode('.jpg', crop)
+    assert ok
+    value = service.verify(encoded.tobytes(), expected_product_id='phone')
+    content = state['calls'][-1]['input'][-1]['content']
+    sent = Image.open(io.BytesIO(base64.b64decode(content[-1]['image_url'].split(',')[1])))
+    displayed = Image.open(io.BytesIO(client.get(value['original_image_url']).content))
+    annotated = Image.open(io.BytesIO(client.get(value['annotated_image_url']).content))
+    assert displayed.size == sent.size == annotated.size == (crop.shape[1], crop.shape[0])
+    assert displayed.width < frame.shape[1]
+    assert displayed.height < frame.shape[0]
+    reference = Image.open(io.BytesIO(client.get(value['reference_image_url']).content))
+    assert reference.size == (200, 300)

@@ -1,11 +1,20 @@
-.scan-order-dialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 40px); overflow: auto; padding: 24px; border: 1px solid #dce5e4; border-radius: 16px; color: #173c41; background: white; box-shadow: 0 20px 80px #102c3d40; }
+.scan-order-dialog { box-sizing: border-box; width: min(680px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; padding: 20px; border: 1px solid #dce5e4; border-radius: 16px; color: #173c41; background: white; box-shadow: 0 20px 80px #102c3d40; }
 .scan-order-dialog::backdrop { background: #12202d99; }
 .scan-order-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
 .scan-order-heading h2 { margin: 0 0 8px; }
 .scan-order-heading p { margin: 0 0 20px; color: #52616b; line-height: 1.5; }
 .scan-order-lookup label { display: block; font-weight: 600; margin-bottom: 8px; }
-.scan-order-lookup > div { display: flex; gap: 10px; flex-wrap: wrap; }
-.scan-order-lookup input { flex: 1; min-width: 140px; padding: 12px; border: 1px solid #aabdbd; border-radius: 8px; font: inherit; }
+.scan-order-entry { display: grid; grid-template-columns: minmax(0, 1fr) minmax(210px, 1fr); gap: 24px; align-items: center; }
+.scan-order-actions { display: flex; flex-direction: column; min-width: 0; }
+.scan-order-lookup input { box-sizing: border-box; width: 100%; min-width: 0; padding: 12px; border: 1px solid #aabdbd; border-radius: 8px; font: inherit; font-size: 28px; font-weight: 600; }
+.scan-order-actions .continue-button { width: 100%; min-height: 56px; margin-top: 20px; }
+.scan-order-numpad { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.scan-order-numpad button { min-height: 56px; border: 1px solid #bdcdd1; background: #f2f7f6; color: #173c41; font: inherit; font-size: 24px; font-weight: 600; touch-action: manipulation; }
+.scan-order-numpad button:nth-last-child(3) { font-size: 16px; }
+.scan-order-numpad button:active { background: #cde7df; }
+.scan-order-numpad button:disabled { opacity: .5; }
+@media (max-height: 500px) { .scan-order-dialog { padding: 16px; } .scan-order-heading p { margin-bottom: 12px; } .scan-order-numpad button { min-height: 48px; } }
+@media (max-width: 450px) { .scan-order-entry { gap: 12px; grid-template-columns: minmax(0, 1fr) minmax(170px, 1fr); } .scan-order-numpad { gap: 6px; } .scan-order-lookup input { font-size: 20px; } .scan-order-numpad button { padding: 8px; } }
 .scan-order-dialog button { padding: 10px 16px; min-height: 44px; border-radius: 8px; }
 .scan-order-dialog button:focus-visible, .scan-order-dialog input:focus-visible { outline: 3px solid #5373dd; outline-offset: 3px; }
 .scan-order-help { font-size: 14px; line-height: 1.5; color: #52616b; margin: 16px 0 0; }

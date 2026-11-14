@@ -118,19 +118,22 @@ class CameraScanTests(unittest.TestCase):
                     raise RuntimeError("unavailable")
 
             def capture_array(self, stream):
-                return np.full((96, 128, 3), 40 + 80 * self.number, dtype=np.uint8)
+                frame = np.full((960, 1280, 3), 150, dtype=np.uint8)
+                frame[580:700, 520:760] = 40 + 190 * self.number
+                return frame
 
             def close(self):
                 self.closed = True
 
         class Verifier:
             def verify(self, image, **kwargs):
-                calls.append(cv2.imdecode(np.frombuffer(image, np.uint8), cv2.IMREAD_COLOR).mean())
+                decoded = cv2.imdecode(np.frombuffer(image, np.uint8), cv2.IMREAD_COLOR)
+                calls.append(decoded)
                 entered.set()
                 release.wait(5)
                 return {"request_id": str(len(calls))}
 
-        with patch.dict(os.environ, {"RETURNSCAN_CAMERA_IDS": configured_ids, "RETURNSCAN_CAMERA_AUTO_SCAN": "0", "RETURNSCAN_CAMERA_INTERVAL_SECONDS": "0.02"}), patch.dict('sys.modules', {"picamera2": types.SimpleNamespace(Picamera2=Camera)}):
+        with patch.dict(os.environ, {"RETURNSCAN_CAMERA_IDS": configured_ids, "RETURNSCAN_CAMERA_AUTO_SCAN": "0", "RETURNSCAN_CAMERA_INTERVAL_SECONDS": "0.02", "RETURNSCAN_CAMERA_ADAPTIVE_ZOOM": "1"}), patch.dict('sys.modules', {"picamera2": types.SimpleNamespace(Picamera2=Camera)}):
             monitor = CameraMonitor(Verifier())
             monitor.start()
             try:
@@ -150,8 +153,15 @@ class CameraScanTests(unittest.TestCase):
                 self.assertEqual(result["status"], "complete")
                 self.assertEqual([v["camera_id"] for v in result["results"]], expected_ids)
                 self.assertEqual(len(calls), len(expected_ids))
-                for value, camera_id in zip(calls, expected_ids):
-                    self.assertAlmostEqual(value, 40 + 80 * camera_id, delta=2)
+                for image, camera_id in zip(calls, expected_ids):
+                    height, width = image.shape[:2]
+                    self.assertGreater(width, 240)
+                    self.assertLess(width, 1280)
+                    self.assertGreater(height, 120)
+                    self.assertLess(height, 960)
+                    self.assertAlmostEqual(image[height // 2, width // 2].mean(),
+                                           40 + 190 * camera_id, delta=2)
+                    self.assertAlmostEqual(image[0, 0].mean(), 150, delta=2)
             finally:
                 release.set()
                 monitor.stop()

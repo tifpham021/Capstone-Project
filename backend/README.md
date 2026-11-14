@@ -18,6 +18,15 @@ python -m pip install -r backend/requirements.txt
 python -m uvicorn backend.main:app --env-file backend/.env --host 0.0.0.0 --port 8000 --workers 1
 ```
 
+Pi inspection images use an adaptive crop around the central product by default.
+The detector is tuned to dark/white products on the current metal table. It adds
+padding and preserves the full frame when no suitable object is found. Crops
+retain native resolution; the same cropped view is sent to Luna and displayed
+with its box overlays. Uploads and references are unaffected. Stillness detection
+continues to observe the full frame. Set `RETURNSCAN_CAMERA_ADAPTIVE_ZOOM=0` to
+disable cropping, then restart the backend. This replaces the former fixed
+`RETURNSCAN_CAMERA_ZOOM` setting, which is no longer used.
+
 Camera setup remains `RETURNSCAN_CAMERAS_ENABLED=1`, `RETURNSCAN_CAMERA_IDS=0,1`
 (or a single ID), `RETURNSCAN_CAMERA_PRODUCT_ID=<enrolled product ID>`, and
 `RETURNSCAN_CAMERA_AUTO_SCAN=0` for button-only scans. Existing Picamera2 and

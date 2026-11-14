@@ -52,6 +52,7 @@ class CameraMonitor:
             raise ValueError("RETURNSCAN_CAMERA_IDS must contain one or two distinct nonnegative IDs")
         self.settle = self._number("RETURNSCAN_CAMERA_SETTLE_SECONDS", 2.0)
         self.interval = self._number("RETURNSCAN_CAMERA_INTERVAL_SECONDS", 0.2)
+        self.adaptive_zoom = os.getenv("RETURNSCAN_CAMERA_ADAPTIVE_ZOOM", "1") == "1"
         self.fraction = self._number("RETURNSCAN_CAMERA_MOTION_FRACTION", 0.015)
         if self.fraction >= 1:
             raise ValueError("Camera motion fraction must be less than 1")
@@ -238,6 +239,12 @@ class CameraMonitor:
                         gate.armed = False
                         images = []
                         for frame in frames:
+                            if self.adaptive_zoom:
+                                from backend.camera_crop import adaptive_crop
+
+                                # The verifier saves this exact framing for the UI
+                                # and uses it for both Luna input and box overlays.
+                                frame = adaptive_crop(frame)
                             ok, encoded = cv2.imencode(".jpg", frame,
                                                       [cv2.IMWRITE_JPEG_QUALITY, 92])
                             if not ok:

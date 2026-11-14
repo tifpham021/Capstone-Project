@@ -47,7 +47,18 @@ export default function ItemInspection({ onBack, onContinue, scan, onScanChange 
     lookupRef.current?.abort()
     setLookingUp(false)
     setOrderError('')
-    setOrderNumber(value)
+    setOrderNumber(value.replace(/\D/g, '').slice(0, 64))
+  }
+
+  function handleOrderKey(event) {
+    if (submitting) return
+    if (/^[0-9]$/.test(event.key)) {
+      event.preventDefault()
+      changeOrderNumber(orderNumber + event.key)
+    } else if (event.key === 'Backspace' || event.key === 'Delete') {
+      event.preventDefault()
+      changeOrderNumber(event.key === 'Delete' ? '' : orderNumber.slice(0, -1))
+    }
   }
 
   useEffect(() => {
@@ -138,12 +149,19 @@ export default function ItemInspection({ onBack, onContinue, scan, onScanChange 
           <button type="button" className="save-button" disabled={submitting} onClick={closeOrderDialog}>Close</button>
         </div>
         <form onSubmit={startScan} className="scan-order-lookup">
-          <label htmlFor="scan-order-number">Order number</label>
-          <div>
-            <input ref={orderInputRef} id="scan-order-number" name="order_number" value={orderNumber} onChange={(event) => changeOrderNumber(event.target.value)} placeholder="Enter 1 for the demo" maxLength={64} disabled={submitting} required />
-            <button type="submit" className="continue-button" disabled={submitting || !orderNumber.trim()}>{lookingUp ? 'Loading order…' : submitting ? 'Starting scan…' : 'Scan item'}</button>
+          <div className="scan-order-entry">
+            <div className="scan-order-actions">
+              <label htmlFor="scan-order-number">Order number</label>
+              <input ref={orderInputRef} id="scan-order-number" name="order_number" value={orderNumber} readOnly inputMode="none" onKeyDown={handleOrderKey} placeholder="Enter order number" disabled={submitting} aria-describedby="scan-order-hint" />
+              <p id="scan-order-hint" className="scan-order-help">Demo order: 1</p>
+              <button type="submit" className="continue-button" disabled={submitting || !orderNumber.trim()}>{lookingUp ? 'Loading order…' : submitting ? 'Starting scan…' : 'Scan item'}</button>
+            </div>
+            <div className="scan-order-numpad" role="group" aria-label="Order number keypad">
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'Clear', '0', '⌫'].map((key) => (
+                <button key={key} type="button" disabled={submitting} aria-label={key === '⌫' ? 'Backspace' : key === 'Clear' ? 'Clear order number' : key} onClick={() => changeOrderNumber(key === 'Clear' ? '' : key === '⌫' ? orderNumber.slice(0, -1) : orderNumber + key)}>{key}</button>
+              ))}
+            </div>
           </div>
-          <p className="scan-order-help">For the demo, use order 1: iPhone 15, expected weight 171 g. The weight sensor is simulated within ±5%.</p>
         </form>
         {orderError && <p className="scan-error" role="alert">{orderError}</p>}
       </dialog>

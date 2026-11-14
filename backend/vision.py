@@ -26,9 +26,31 @@ reflections, background, and image resolution. A different legitimate model is n
 evidence of counterfeiting. Never claim verified authenticity from photos.
 Flags use present, absent, unknown. Absent means no visible evidence in these views,
 not guaranteed absence. Confidence is an uncalibrated assessment, not an authenticity
-probability. Use unknown for ambiguous damage or counterfeit status. Set insufficient
-visual evidence to present if these images prevent a meaningful visible-product
-comparison; unseen internals alone do not make a clear exterior comparison insufficient.
+probability. Make the strongest supported decision from visible evidence. Compare
+coarse design first: overall silhouette, proportions, stem/body geometry, tips,
+and the number and arrangement of visible components. Small or blurry images can
+still show decisive structural differences. Do not require readable markings,
+fine surface detail, identical framing, or identical viewpoints to decide.
+Set different_item to present when a visible structural difference cannot
+reasonably be explained by viewpoint, occlusion, lighting, or ordinary wear.
+Explain the specific difference; generic statements about image quality are not
+a substitute for comparing visible shapes. For earbuds, explicitly compare stem
+length/thickness relative to the body, body shape, and tip/earpiece construction
+where visible. Do not assume every white stem-style earbud is the same design.
+Set absent when there is no visible evidence for that flag in the assessable
+regions; inability to exclude microscopic damage is not by itself unknown.
+Assess each flag independently. Uncertain fine damage or counterfeit status must
+not suppress a supported different-item finding: use discrepancy_detected if any
+observable design difference, damage, or missing part is supported. Use
+visually_consistent when assessable visible design agrees and no discrepancy is
+supported. Use inconclusive only when neither conclusion is supportable after
+comparing the visible coarse features. Do not force a difference from viewpoint
+alone or treat an unseen feature as absent.
+Use unknown for genuinely ambiguous flags. Set insufficient_visual_evidence to
+present only when the available views prevent both a meaningful design comparison
+and any supported discrepancy finding; small pixel dimensions, blur, or unseen
+internals alone do not establish this. Confidence must reflect the strength of
+the visible evidence; decisiveness does not require high confidence.
 Return at most five observable discrepancies with concise descriptions and tight boxes.
 For each key product region that does not match, supply query_box around the affected
 region of the returned item and reference_box around its corresponding reference

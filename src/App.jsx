@@ -117,6 +117,14 @@ function Workstation({ session, onSignOut }) {
   const caseId = returnCase?.id
   const updateScan = useCallback((scan) => {
     setCaseScans((previous) => ({ ...previous, [caseId]: scan }))
+    if (scan.order) {
+      const order = scan.order
+      setReturnCase((current) => current?.id === caseId ? {
+        ...current, orderNumber: order.order_number, lookupIdentifier: order.order_number,
+        productName: order.product_name, productModel: order.sku, sku: order.sku,
+        serialNumber: 'Not recorded', customerName: 'Demo order', refundAmount: null,
+      } : current)
+    }
   }, [caseId])
   const [preferences, setPreferences] = useState(() => loadPreferences(user.email))
   const [history, setHistory] = useState(() => loadDecisionHistory(user.email))

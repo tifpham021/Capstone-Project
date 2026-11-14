@@ -42,8 +42,11 @@ class StillnessGate:
 
 
 class CameraMonitor:
-    def __init__(self, verifier):
+    def __init__(self, verifier, weight_sensor=None):
         self.verifier = verifier
+        from backend.orders import DemoWeightSensor
+
+        self.weight_sensor = weight_sensor if weight_sensor is not None else DemoWeightSensor()
         self.ids = tuple(int(x) for x in os.getenv("RETURNSCAN_CAMERA_IDS", "0,1").split(","))
         if not 1 <= len(self.ids) <= 2 or len(set(self.ids)) != len(self.ids) or min(self.ids) < 0:
             raise ValueError("RETURNSCAN_CAMERA_IDS must contain one or two distinct nonnegative IDs")
@@ -66,7 +69,7 @@ class CameraMonitor:
                       "latest": None, "error": None}
         self.thread = threading.Thread(target=self._run, name="camera-monitor", daemon=True)
 
-    def request_scan(self):
+    def request_scan(self, order=None):
         from backend.common import ServiceError
 
         with self.lock:
@@ -77,6 +80,8 @@ class CameraMonitor:
             scan_id = uuid.uuid4().hex
             self.pending_scan = scan_id
             self.scans[scan_id] = {"scan_id": scan_id, "status": "queued"}
+            if order is not None:
+                self.scans[scan_id]["order"] = copy.deepcopy(order)
             while len(self.scans) > 16:
                 del self.scans[next(iter(self.scans))]
             return copy.deepcopy(self.scans[scan_id])
@@ -112,13 +117,17 @@ class CameraMonitor:
         # Never close a camera concurrently with its capture thread.
         self.thread.join(timeout=10)
 
-    def _verify(self, images, captured_at):
+    def _verify(self, images, captured_at, order=None):
+        from backend.orders import combined_decision
+
+        weight = self.weight_sensor.check(order) if order is not None else None
+        expected = order["product_id"] if order is not None else self.expected
         results = []
         for camera_id, image in zip(self.ids, images):
             if self.stop_event.is_set():
                 break
             try:
-                result = self.verifier.verify(image, expected_product_id=self.expected,
+                result = self.verifier.verify(image, expected_product_id=expected,
                                               local_backend=self.local_backend)
                 if hasattr(result, "model_dump"):
                     result = result.model_dump(mode="json")
@@ -126,14 +135,18 @@ class CameraMonitor:
             except Exception as exc:
                 LOG.exception("Camera %s verification failed", camera_id)
                 results.append({"camera_id": camera_id, "error": str(exc)})
-        return {"captured_at": captured_at, "results": results,
-                "aggregation": "independent_images"}
+        completed = {"captured_at": captured_at, "results": results,
+                     "aggregation": "independent_images"}
+        if order is not None:
+            completed.update(order=order, weight=weight, decision=combined_decision(results, weight))
+        return completed
 
     def _run(self):
         cameras = []
         executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="camera-cv")
         future = None
         active_scan = None
+        active_order = None
         try:
             import cv2
             from picamera2 import Picamera2
@@ -178,6 +191,7 @@ class CameraMonitor:
                         if active_scan:
                             self.scans[active_scan].update(status="complete", **completed)
                     active_scan = None
+                    active_order = None
                     future = None
                     # Discard the old motion history after inference; require fresh settling.
                     gate.quiet_since = None
@@ -188,6 +202,7 @@ class CameraMonitor:
                         self.pending_scan = None
                         self.busy = True
                         active_scan = requested
+                        active_order = copy.deepcopy(self.scans[requested].get("order"))
                         self.scans[requested]["status"] = "processing"
                 # Acquire fresh frames after accepting the button request.
                 frames = [camera.capture_array("main") for camera in cameras]
@@ -229,7 +244,7 @@ class CameraMonitor:
                                 raise RuntimeError("Camera JPEG encoding failed")
                             images.append(encoded.tobytes())
                         self._set(status="processing")
-                        future = executor.submit(self._verify, images, time.time())
+                        future = executor.submit(self._verify, images, time.time(), active_order)
                 self.stop_event.wait(self.interval)
         except Exception as exc:
             LOG.exception("Camera monitor stopped")

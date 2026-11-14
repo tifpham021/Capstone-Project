@@ -1,0 +1,64 @@
+{
+  "test_date": "2026-11-14",
+  "hardware": "Laptop with recorded Picamera2 frames, not physical Pi cameras",
+  "provider": "Real Luna API via backend, through Vite proxy",
+  "station_product_default": "iphone-luna-smoke (deliberately different from order)",
+  "order": {
+    "order_number": "1",
+    "product_id": "iphone-15",
+    "product_name": "Apple iPhone 15 \u00b7 Black",
+    "sku": "IPHONE-15-BLACK",
+    "expected_weight_g": 171.0,
+    "weight_tolerance_percent": 5.0
+  },
+  "weight": {
+    "expected_weight_g": 171.0,
+    "measured_weight_g": 177.66,
+    "difference_g": 6.66,
+    "difference_percent": 3.89,
+    "tolerance_percent": 5.0,
+    "within_tolerance": true,
+    "sensor_mode": "demo",
+    "simulation_range_percent": 5.0
+  },
+  "combined_decision": "suspicious",
+  "views": [
+    {
+      "camera_id": 0,
+      "product_id": "iphone-15",
+      "decision": "consistent",
+      "confidence_percent": 99.0,
+      "latency_ms": {
+        "preprocessing": 51.55029194429517,
+        "retrieval": 0.0,
+        "decision_api": 3189.1412920085713,
+        "visualization": 324.9520829995163,
+        "total": 3565.643666952383
+      },
+      "discrepancies": 0
+    },
+    {
+      "camera_id": 1,
+      "product_id": "iphone-15",
+      "decision": "suspicious",
+      "confidence_percent": 99.0,
+      "latency_ms": {
+        "preprocessing": 19.644083979073912,
+        "retrieval": 0.0,
+        "decision_api": 3713.7273750267923,
+        "visualization": 219.94108299259096,
+        "total": 3953.312541998457
+      },
+      "discrepancies": 1
+    }
+  ],
+  "browser_checks": [
+    "Unknown order submission stayed in modal and did not capture",
+    "Order 1 submitted with Enter immediately loaded order and queued scan without confirmation step",
+    "Modal focused order input; Escape closed it",
+    "Scan polling completed with order-specific references",
+    "All four reference/annotated PNGs loaded",
+    "Review retained order 1 and same weight reading (initial flow check)",
+    "No browser console errors"
+  ]
+}

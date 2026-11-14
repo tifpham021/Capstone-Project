@@ -3,20 +3,26 @@ import os
 from contextlib import asynccontextmanager
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, File, Form, UploadFile
+from fastapi import Body, Depends, FastAPI, File, Form, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import APIKeyHeader
+from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException
 
 from backend.catalog import IMAGE_ARTIFACTS
 from backend.common import ServiceError
 from backend.config import Settings
+from backend.orders import OrderStore, ensure_demo_reference
 from backend.schemas import BatchResponse, ProductSummary, VerificationResponse
 
 IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
 LocalBackend = Literal["auto", "aliked", "sift"]
+
+
+class ScanOrderRequest(BaseModel):
+    order_number: str = Field(min_length=1, max_length=64)
 
 
 class BodyLimitMiddleware:
@@ -58,6 +64,7 @@ async def read_upload(file: UploadFile, settings: Settings) -> bytes:
 
 def create_app(settings: Settings | None = None, service=None) -> FastAPI:
     settings = settings or Settings.from_env()
+    create_default_service = service is None
     if service is None:
         if settings.decision_engine == "luna":
             from backend.vision import LunaVerificationService
@@ -69,6 +76,9 @@ def create_app(settings: Settings | None = None, service=None) -> FastAPI:
             service = VerificationService(settings)
         else:
             raise ValueError("RETURNSCAN_DECISION_ENGINE must be luna or cv")
+    orders = OrderStore(settings.data_dir)
+    if create_default_service:
+        ensure_demo_reference(service)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -95,6 +105,7 @@ def create_app(settings: Settings | None = None, service=None) -> FastAPI:
         description="Live Pi camera capture with Luna visual decisions and discrepancy boxes. Confidence is not an authenticity probability.",
     )
     app.state.verifier = service
+    app.state.orders = orders
     app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_request_bytes)
     app.add_middleware(
         CORSMiddleware,
@@ -147,12 +158,21 @@ def create_app(settings: Settings | None = None, service=None) -> FastAPI:
         monitor = getattr(app.state, "camera_monitor", None)
         return monitor.snapshot() if monitor else {"enabled": False, "status": "disabled"}
 
+    @app.get("/v1/orders/{order_number}", dependencies=protected)
+    def get_order(order_number: str):
+        order = orders.get(order_number)
+        product = next(
+            (p for p in app.state.verifier.products() if p["id"] == order["product_id"]), None
+        )
+        return {**order, "reference_count": product["reference_count"] if product else 0}
+
     @app.post("/v1/cameras/scan", status_code=202, dependencies=protected)
-    def scan_cameras():
+    def scan_cameras(body: Annotated[ScanOrderRequest | None, Body()] = None):
+        order = orders.get(body.order_number) if body is not None else None
         monitor = getattr(app.state, "camera_monitor", None)
         if monitor is None:
             raise ServiceError("Camera mode is disabled. Enable RETURNSCAN_CAMERAS_ENABLED.", 503)
-        return monitor.request_scan()
+        return monitor.request_scan(order=order)
 
     @app.get("/v1/cameras/scans/{scan_id}", dependencies=protected)
     def camera_scan_result(scan_id: str):

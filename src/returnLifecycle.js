@@ -46,16 +46,19 @@ function lifecycleEvent(status, label) {
 }
 
 export function createIdentifiedReturn(identifier) {
+  const lookupIdentifier = String(identifier || '').trim()
+  const returnSuffix = lookupIdentifier.replace(/[^a-z0-9]/gi, '').toUpperCase().slice(-10) || 'PENDING'
+
   return {
-    id: 'RORD-8921',
-    lookupIdentifier: identifier,
-    orderNumber: 'ORD-8921',
-    sku: 'DRL-20V-KIT',
-    serialNumber: 'DT20-8821-K7',
-    productName: '20V Cordless Drill',
-    productModel: 'Model CD20',
-    refundAmount: 129,
-    customerName: 'Jane Doe',
+    id: `RET-${returnSuffix}`,
+    lookupIdentifier,
+    orderNumber: lookupIdentifier,
+    sku: '',
+    serialNumber: '',
+    productName: 'Product details unavailable',
+    productModel: '',
+    refundAmount: null,
+    customerName: '',
     status: RETURN_STATUS.IDENTIFIED,
     decision: null,
     history: [lifecycleEvent(RETURN_STATUS.IDENTIFIED)],

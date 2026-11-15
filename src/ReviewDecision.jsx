@@ -1,13 +1,5 @@
 import { useState } from 'react'
-import ScanResults from './ScanResults.jsx'
-import completeCircle from './assets/figma/inspection/b6992.svg'
-import completeCheck from './assets/figma/inspection/c8145.svg'
-import activeCircle from './assets/figma/inspection/6279e.svg'
-import shieldCircle from './assets/figma/inspection/57345.svg'
-import shieldCheck from './assets/figma/inspection/702ae.svg'
-import warningCircle from './assets/figma/inspection/4633e.svg'
-import warningMark from './assets/figma/inspection/630e0.svg'
-import continueArrow from './assets/figma/inspection/d859a.svg'
+import { artifactUrl } from './scanApi.js'
 import { RETURN_STATUS } from './returnLifecycle.js'
 import './ReviewDecision.css'
 
@@ -15,7 +7,7 @@ const decisions = [
   {
     id: 'approve',
     title: 'Approve return',
-    description: 'Approve the return and close the case.',
+    description: 'Issue the refund and close the case.',
     badge: 'Refund',
   },
   {
@@ -26,168 +18,146 @@ const decisions = [
   },
   {
     id: 'fraud',
-    title: 'Flag as suspected fraud',
-    description: 'Hold the refund and send the case to investigation.',
+    title: 'Flag suspected fraud',
+    description: 'Hold the refund and send for investigation.',
     badge: 'Hold',
   },
 ]
 
-
-function ReviewAsset({ className = '', children }) {
-  return <span className={`review-asset ${className}`}>{children}</span>
+function formatKilograms(grams) {
+  if (!Number.isFinite(grams)) return 'Not available'
+  return `${(grams / 1000).toFixed(3)} kg`
 }
 
-function CompletedStep({ title, detail, onClick, label }) {
-  return (
-    <li className="review-step complete">
-      <button type="button" onClick={onClick} aria-label={label}>
-        <ReviewAsset className="review-step-icon complete-icon">
-          <img src={completeCircle} alt="" />
-          <img src={completeCheck} alt="" />
-        </ReviewAsset>
-        <span><strong>{title}</strong><small>{detail}</small></span>
-      </button>
-    </li>
-  )
+function visualResultLabel(decision) {
+  if (decision === 'consistent') return 'Likely the same product'
+  if (decision === 'suspicious') return 'Differences detected'
+  return 'Needs reviewer attention'
 }
 
-function ReviewWorkflow({ onIdentify, onInspection }) {
-  return (
-    <ol className="review-workflow" aria-label="Return workflow">
-      <CompletedStep
-        title="Identify return"
-        detail="Return and order verified"
-        onClick={onIdentify}
-        label="Back to product identification"
-      />
-      <CompletedStep
-        title="Inspect item"
-        detail="Review camera scan results"
-        onClick={onInspection}
-        label="Back to item inspection"
-      />
-      <li className="review-step current" aria-current="step">
-        <span className="review-step-content">
-          <ReviewAsset className="review-step-icon">
-            <img src={activeCircle} alt="" />
-            <b>3</b>
-          </ReviewAsset>
-          <span><strong>Review decision</strong><small>Human approval is required</small></span>
-        </span>
-      </li>
-    </ol>
-  )
+function evidenceTone(ready, needsReview = false) {
+  if (!ready) return 'pending'
+  return needsReview ? 'review' : 'ready'
 }
 
-function formatActivityTime(occurredAt) {
-  return new Intl.DateTimeFormat([], {
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(new Date(occurredAt))
-}
-
-function ReviewDecision({ scan, returnCase, onIdentify, onBack, onSubmitDecision, reviewerName }) {
+function ReviewDecision({ scan, returnCase, onBack, onSubmitDecision, reviewerName }) {
   const [decision, setDecision] = useState(returnCase.decision?.type || 'secondary')
   const [reason, setReason] = useState(returnCase.decision?.reason || 'Missing serial / identity evidence')
-  const [note, setNote] = useState(returnCase.decision?.note || '')
   const [feedback, setFeedback] = useState('')
   const isComplete = returnCase.status === RETURN_STATUS.COMPLETED
+
+  const resultEntry = scan?.results?.find((entry) => entry.result) || scan?.results?.[0]
+  const verification = resultEntry?.result
+  const cameraImagePath = verification?.annotated_image_url
+    || verification?.original_image_url
+    || verification?.normalized_image_url
+  const cameraImage = artifactUrl(cameraImagePath)
+  const visualDecision = verification?.decision
+  const confidence = verification?.confidence_percent
+  const weight = scan?.weight
+  const visualReady = Boolean(verification)
+  const weightReady = Boolean(weight)
+  const visualNeedsReview = visualReady && visualDecision !== 'consistent'
+  const weightNeedsReview = weightReady && !weight.within_tolerance
+  const firstWarning = verification?.warnings?.[0]
+    || (visualNeedsReview ? verification?.reasons?.[0] : '')
+    || (weightNeedsReview ? 'Measured weight is outside the expected tolerance.' : '')
+  const reviewerCheck = firstWarning || 'Verify the item markings before approving.'
 
   const submitDecision = (event) => {
     event.preventDefault()
     const title = decisions.find((option) => option.id === decision)?.title
-    onSubmitDecision({ type: decision, title, reason, note })
+    onSubmitDecision({ type: decision, title, reason, note: '' })
     setFeedback(`${title} recorded for ${returnCase.id}.`)
   }
 
   return (
     <>
       <main id="main" className="review-page">
-        <ReviewWorkflow onIdentify={onIdentify} onInspection={onBack} />
-
         <section className="review-intro" aria-labelledby="review-title">
           <div>
-            <h1 id="review-title">Review and decide</h1>
-            <p>Review the evidence package and record a final return decision.</p>
+            <h1 id="review-title">Review &amp; decide</h1>
+            <p>Review the scan results, then record the final outcome.</p>
           </div>
-          <div className="review-case">
+          <div className="review-case-summary" aria-label="Return case summary">
             <div>
               <span>Return case</span>
               <strong>{returnCase.id}</strong>
-              <small>{returnCase.productName} / {returnCase.productModel}</small>
             </div>
-            <span className={`decision-due${isComplete ? ' completed' : ''}`}><i />{isComplete ? 'Completed' : 'Decision due'}</span>
+            <div>
+              <span>Expected product</span>
+              <strong>{returnCase.productName}</strong>
+              {returnCase.productModel && <small>{returnCase.productModel}</small>}
+            </div>
           </div>
         </section>
 
-        <div className="review-dashboard">
-          <div className="review-main-column">
-            <section className="recommendation-card" aria-labelledby="recommendation-title">
-              <ReviewAsset className="recommendation-icon">
-                <img src={shieldCircle} alt="" />
-                <img src={shieldCheck} alt="" />
-              </ReviewAsset>
+        <div className="review-layout">
+          <section className="review-analysis-card" aria-labelledby="analysis-summary-title">
+            <header className="review-section-heading">
               <div>
-                <span>System recommendation</span>
-                <h2 id="recommendation-title">Review the camera evidence</h2>
-                <p>Scores and marked differences are shown separately for each camera. A reviewer must decide the outcome.</p>
+                <h2 id="analysis-summary-title">Analysis summary</h2>
+                <p>Camera evidence and the two checks used for this return.</p>
               </div>
-              <div className="confidence-score">
-                <strong>{scan?.results ? `${scan.results.filter((view) => view.result).length} views` : 'No scan'}</strong>
-                <span>Camera results</span>
+            </header>
 
+            <div className="review-analysis-grid">
+              <div className="review-camera-section">
+                <span className="review-eyebrow">Camera evidence</span>
+                <figure className="review-camera-preview">
+                  <span className="review-capture-label"><i />Captured</span>
+                  {cameraImage ? (
+                    <a href={cameraImage} target="_blank" rel="noreferrer" aria-label="Open captured item image">
+                      <img src={cameraImage} alt="Captured returned item" />
+                    </a>
+                  ) : (
+                    <div className="review-camera-placeholder">
+                      <span aria-hidden="true" />
+                      <strong>Camera capture unavailable</strong>
+                    </div>
+                  )}
+                  <span className="review-camera-count">{scan?.results?.length || 0} camera capture</span>
+                </figure>
+                <p className="review-camera-caption">Captured automatically after order confirmation</p>
               </div>
-            </section>
 
-            <section className="review-evidence-card" aria-labelledby="evidence-title">
-              <div className="review-card-heading">
-                <h2 id="evidence-title">Evidence package</h2>
-                <span>{scan?.captured_at ? new Date(scan.captured_at * 1000).toLocaleString() : 'No capture yet'}</span>
+              <div className="review-results-panel">
+                <header>
+                  <span>Analysis results</span>
+                  <small>AI results are advisory</small>
+                </header>
+
+                <section className={`review-result-row ${evidenceTone(visualReady, visualNeedsReview)}`}>
+                  <i aria-hidden="true">{visualReady ? (visualNeedsReview ? '!' : '✓') : '—'}</i>
+                  <div>
+                    <span>Visual match</span>
+                    <strong>{visualResultLabel(visualDecision)}</strong>
+                  </div>
+                  <b>{Number.isFinite(confidence) ? `${confidence.toFixed(0)}%` : 'Not available'}</b>
+                </section>
+
+                <section className={`review-result-row ${evidenceTone(weightReady, weightNeedsReview)}`}>
+                  <i aria-hidden="true">{weightReady ? (weightNeedsReview ? '!' : '✓') : '—'}</i>
+                  <div>
+                    <span>Weight check</span>
+                    <strong>{formatKilograms(weight?.expected_weight_g)} → {formatKilograms(weight?.measured_weight_g)}</strong>
+                  </div>
+                  <b>{Number.isFinite(weight?.difference_g) ? `${weight.difference_g >= 0 ? '+' : ''}${(weight.difference_g / 1000).toFixed(3)} kg` : 'Not available'}</b>
+                </section>
+
+                <div className="review-results-note">
+                  <span aria-hidden="true">!</span>
+                  <p>{reviewerCheck}</p>
+                </div>
               </div>
-
-              <dl className="evidence-metadata">
-                <div><dt>Order</dt><dd>#{returnCase.orderNumber}</dd></div>
-                <div><dt>SKU</dt><dd>{returnCase.sku}</dd></div>
-                <div><dt>Serial</dt><dd>{returnCase.serialNumber}</dd></div>
-                <div><dt>Refund</dt><dd>{returnCase.refundAmount == null ? 'Not on file' : `$${returnCase.refundAmount.toFixed(2)}`}</dd></div>
-                <div><dt>Customer</dt><dd>{returnCase.customerName}</dd></div>
-              </dl>
-
-              <ScanResults scan={scan} />
-
-              <div className="review-attention">
-                <ReviewAsset>
-                  <img src={warningCircle} alt="" />
-                  <img src={warningMark} alt="" />
-                </ReviewAsset>
-                <div><strong>Reviewer attention</strong><span>Inspect alignment, marked differences, and any warnings before recording a decision.</span></div>
-                <button type="button" onClick={onBack}>View inspection</button>
-              </div>
-            </section>
-
-            <section className="activity-card" aria-labelledby="activity-title">
-              <h2 id="activity-title">Case activity</h2>
-              <ol>
-                {returnCase.history.map((activity, index) => (
-                  <li
-                    className={index === returnCase.history.length - 1 ? 'current' : 'done'}
-                    key={`${activity.status}-${activity.occurredAt}`}
-                  >
-                    <i />
-                    <span>{formatActivityTime(activity.occurredAt)} - {activity.label}</span>
-                  </li>
-                ))}
-              </ol>
-            </section>
-          </div>
-
-          <form id="review-decision-form" className="decision-card" onSubmit={submitDecision}>
-            <h2>Record final decision</h2>
-            <p>Choose the outcome supported by the evidence.</p>
-            <div className="advisory-note">
-              <span>i</span>
-              <div><strong>AI signals are advisory only.</strong><small>Your decision and rationale become the audit record.</small></div>
             </div>
+          </section>
+
+          <form id="review-decision-form" className="review-decision-card" onSubmit={submitDecision}>
+            <header className="review-section-heading">
+              <div><h2>Final decision</h2><p>The reviewer makes the final call.</p></div>
+              <span className={`decision-required-pill${isComplete ? ' completed' : ''}`}>{isComplete ? 'Completed' : 'Decision required'}</span>
+            </header>
 
             <fieldset disabled={isComplete}>
               <legend className="sr-only">Final decision</legend>
@@ -201,48 +171,45 @@ function ReviewDecision({ scan, returnCase, onIdentify, onBack, onSubmitDecision
                     onChange={() => setDecision(option.id)}
                   />
                   <span className="decision-radio"><i /></span>
-                  <span><strong>{option.title}</strong><small>{option.description}</small></span>
+                  <span><strong>{option.title}</strong></span>
                   <b>{decision === option.id && option.id === 'secondary' ? 'Selected' : option.badge}</b>
                 </label>
               ))}
             </fieldset>
 
-            <label className="decision-field">
-              <span>Reason for escalation</span>
-              <select value={reason} onChange={(event) => setReason(event.target.value)} disabled={isComplete}>
-                <option>Missing serial / identity evidence</option>
-                <option>Visual evidence is inconclusive</option>
-                <option>Weight measurement is inconsistent</option>
-                <option>Suspected item substitution</option>
-              </select>
-            </label>
+            {decision !== 'approve' && (
+              <>
+                <label className="decision-field">
+                  <span>{decision === 'fraud' ? 'Reason for flag' : 'Reason for review'}</span>
+                  <select value={reason} onChange={(event) => setReason(event.target.value)} disabled={isComplete}>
+                    <option>Missing serial / identity evidence</option>
+                    <option>Visual evidence is inconclusive</option>
+                    <option>Weight measurement is inconsistent</option>
+                    <option>Suspected item substitution</option>
+                  </select>
+                </label>
 
-            <label className="decision-field decision-note">
-              <span>Decision note</span>
-              <textarea
-                value={note}
-                onChange={(event) => setNote(event.target.value)}
-                placeholder="Explain what the next reviewer should verify..."
-                disabled={isComplete}
-              />
-              <small>{decision === 'approve' ? 'Optional for approvals' : 'Required for escalations and fraud flags'}</small>
-            </label>
+              </>
+            )}
 
-            <span className="audit-note">Reviewer: {reviewerName} / Every decision is recorded in the audit log.</span>
+            <div className="review-advisory-note">
+              <span>i</span>
+              <p>AI recommendation is advisory. Your decision is recorded.</p>
+            </div>
+            <span className="audit-note">Reviewer: {reviewerName}</span>
           </form>
         </div>
       </main>
 
       <footer className="review-footer">
         <div className="review-confirmation">
-          <span>✓</span>
-          <div><strong>{isComplete ? 'Decision recorded' : 'Final action requires confirmation'}</strong><small aria-live="polite">{feedback || (isComplete ? `${returnCase.decision.title} completed this return.` : 'The selected outcome will be recorded in the case audit log.')}</small></div>
+          <strong>{isComplete ? 'Decision recorded' : 'Analysis complete — reviewer decision required'}</strong>
+          <small aria-live="polite">{feedback || (isComplete ? `${returnCase.decision.title} completed this return.` : 'The evidence is ready. Review the results and submit one final outcome.')}</small>
         </div>
         <div className="review-actions">
-          <button type="button" className="back-button" onClick={onBack}>‹&nbsp; Back to inspection</button>
+          <button type="button" className="back-button" onClick={onBack}>← Back to scan</button>
           <button type="submit" form="review-decision-form" className="submit-review-button" disabled={isComplete}>
-            {isComplete ? 'Decision recorded' : 'Send for review'}
-            <img src={continueArrow} alt="" />
+            {isComplete ? 'Decision recorded' : decision === 'approve' ? 'Approve return' : decision === 'fraud' ? 'Flag return' : 'Send for review'} <span aria-hidden="true">→</span>
           </button>
         </div>
       </footer>

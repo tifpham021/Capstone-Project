@@ -28,17 +28,21 @@ Open the local URL printed in the terminal. Vite typically uses [http://localhos
 
 This branch (`local-ui-rectangle-alignment`) contains the working **Scan item**
 screen and one/two-camera Raspberry Pi capture jobs. It now uses **GPT-6 Luna
-with reasoning off** for decisions. The existing scan button, polling and remote
-API proxy remain in place. Each camera result shows the actual reference beside
+with reasoning off** for decisions. The order-number scan modal, polling and
+API proxy run with the Pi backend. Each camera result shows the actual reference beside
 the boxed return image, plus damage/product/parts/counterfeit/evidence flags,
 confidence and processing time.
 
 See [backend setup](backend/README.md) for Pi configuration and the API key.
-For a frontend running on the Mac, put this in `.env.local` and restart Vite:
+Run the frontend on the Pi as well, in a second terminal:
 
-```dotenv
-RETURNSCAN_API_PROXY_TARGET=http://172.20.10.7:8000
+```bash
+RETURNSCAN_API_PROXY_TARGET=http://127.0.0.1:8000 npm run dev -- --host 0.0.0.0 --port 5173 --strictPort
 ```
+
+Open `http://localhost:5173` on the Pi, or `http://100.70.178.175:5173` from
+another device that can reach it. The proxy uses localhost because both servers
+run on the Pi, regardless of which device opens the webpage.
 
 Keep the OpenAI key on the backend, not in browser configuration. The previous
 CV engine is optional; it is not used as a silent fallback on API failure.

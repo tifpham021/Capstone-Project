@@ -40,21 +40,22 @@ key on the **machine running this backend**. It does not need a local GPU,
 segmentation, alignment, DINO or LightGlue. Captured/reference images leave
 the backend for the comparison request, which sets `store=false`.
 
-## Remote frontend
+## Frontend on the same Pi
 
-On the Mac, set this in `.env.local`, then restart Vite:
+Start Vite in a second terminal on the Pi, from the repository root:
 
-```dotenv
-RETURNSCAN_API_PROXY_TARGET=http://172.20.10.7:8000
+```bash
+RETURNSCAN_API_PROXY_TARGET=http://127.0.0.1:8000 npm run dev -- --host 0.0.0.0 --port 5173 --strictPort
 ```
 
 The existing Vite `/v1` proxy forwards both scan/poll requests and protected
-result PNGs to the Pi. Keep `VITE_API_BASE_URL` empty to use that proxy.
+result PNGs to the local backend. Keep `VITE_API_BASE_URL` empty to use that proxy.
 If the Pi requires `RETURNSCAN_API_KEY`, configure the same value server-side
 on the Vite host; do not expose either key as a `VITE_*` variable.
 
-The Pi must be reachable at this address from the Mac. This is a private LAN
-address; configure firewall/access control before exposing the backend elsewhere.
+Open `http://localhost:5173` on the Pi, or `http://100.70.178.175:5173` from
+another device that can reach the Pi. The browser uses the frontend's origin;
+the Pi's Vite process forwards API requests to `127.0.0.1:8000`.
 
 ## Request flow and response
 

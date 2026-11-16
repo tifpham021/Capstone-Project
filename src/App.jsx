@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import logoPlate from './assets/figma/2b7d2.svg'
 import logoMark from './assets/figma/733b6.svg'
-import notificationBubble from './assets/figma/894b8.svg'
 import chevron from './assets/figma/21c36.svg'
 import scanIconPlate from './assets/figma/14ca8.svg'
 import scanIcon from './assets/figma/316d0.svg'
@@ -45,8 +44,6 @@ const workflowSteps = [
   ['2', 'Inspect item', 'Compare images and measurements'],
   ['3', 'Review decision', 'Approve, escalate, or flag'],
 ]
-
-const SAMPLE_LOOKUP = 'ORD-8921'
 
 function LayeredIcon({ className = '', children }) {
   return <span className={`layered-icon ${className}`}>{children}</span>
@@ -111,21 +108,26 @@ function ProfileMenu({ user, onOpenAccount, onSignOut }) {
 
 function Workstation({ session, onSignOut }) {
   const { user } = session
-  const [screen, setScreen] = useState('identify')
+  const [screen, setScreen] = useState('inspection')
   const [returnCase, setReturnCase] = useState(null)
-  const [caseScans, setCaseScans] = useState({})
-  const caseId = returnCase?.id
+  const [activeScan, setActiveScan] = useState(null)
   const updateScan = useCallback((scan) => {
-    setCaseScans((previous) => ({ ...previous, [caseId]: scan }))
+    setActiveScan(scan)
     if (scan.order) {
       const order = scan.order
-      setReturnCase((current) => current?.id === caseId ? {
-        ...current, orderNumber: order.order_number, lookupIdentifier: order.order_number,
-        productName: order.product_name, productModel: order.sku, sku: order.sku,
-        serialNumber: 'Not recorded', customerName: 'Demo order', refundAmount: null,
-      } : current)
+      setReturnCase((current) => {
+        let next = current || createIdentifiedReturn(order.order_number)
+        if (next.status === RETURN_STATUS.IDENTIFIED) {
+          next = transitionReturn(next, RETURN_STATUS.INSPECTION_IN_PROGRESS)
+        }
+        return {
+          ...next, orderNumber: order.order_number, lookupIdentifier: order.order_number,
+          productName: order.product_name, productModel: order.sku, sku: order.sku,
+          serialNumber: 'Not recorded', customerName: 'Demo order', refundAmount: null,
+        }
+      })
     }
-  }, [caseId])
+  }, [])
   const [preferences, setPreferences] = useState(() => loadPreferences(user.email))
   const [history, setHistory] = useState(() => loadDecisionHistory(user.email))
   const [mode, setMode] = useState(preferences.defaultLookupMode)
@@ -185,19 +187,21 @@ function Workstation({ session, onSignOut }) {
     ))
   }
 
-  // Steps 2 and 3 are always reachable. Without an identified return, the
-  // sample return is loaded and moved forward so the page has case data.
   const openStep = (step, currentReturn = returnCase) => {
-    if (currentReturn === returnCase && canOpenStep(currentReturn, step)) {
-      setScreen(step)
-      return
-    }
     if (step === 'identify') {
       startNewReturn()
       return
     }
+    if (!currentReturn) {
+      setScreen('inspection')
+      return
+    }
+    if (currentReturn === returnCase && canOpenStep(currentReturn, step)) {
+      setScreen(step)
+      return
+    }
 
-    let nextReturn = currentReturn || createIdentifiedReturn(SAMPLE_LOOKUP)
+    let nextReturn = currentReturn
     if (nextReturn.status === RETURN_STATUS.IDENTIFIED) {
       nextReturn = transitionReturn(nextReturn, RETURN_STATUS.INSPECTION_IN_PROGRESS)
     }
@@ -222,11 +226,11 @@ function Workstation({ session, onSignOut }) {
 
   const continueToReview = () => {
     setReturnCase((current) => (
-      current.status === RETURN_STATUS.INSPECTION_IN_PROGRESS
+      current?.status === RETURN_STATUS.INSPECTION_IN_PROGRESS
         ? transitionReturn(current, RETURN_STATUS.AWAITING_DECISION)
         : current
     ))
-    setScreen('review')
+    if (returnCase) setScreen('review')
   }
 
   const completeReturn = (decision) => {
@@ -251,19 +255,17 @@ function Workstation({ session, onSignOut }) {
   }
 
   const startNewReturn = () => {
-    if (returnCase?.status === RETURN_STATUS.COMPLETED) {
-      setReturnCase(null)
-      setLookup('')
-      setStatus('')
-    }
+    setReturnCase(null)
+    setActiveScan(null)
+    setLookup('')
+    setStatus('')
     setMode(preferences.defaultLookupMode)
-    setScreen('identify')
+    setScreen('inspection')
   }
 
   const resumeReturn = () => {
     if (canOpenStep(returnCase, 'review')) setScreen('review')
-    else if (canOpenStep(returnCase, 'inspection')) setScreen('inspection')
-    else setScreen('identify')
+    else setScreen('inspection')
   }
 
   const updatePreferences = (nextPreferences) => {
@@ -280,7 +282,7 @@ function Workstation({ session, onSignOut }) {
     <div className="app-shell" style={{ backgroundImage: `url(${pageBackground})` }}>
       <header className="topbar">
         <div className="topbar-inner">
-          <a className="brand" href="#main" aria-label="ReturnScan home" onClick={() => openStep('identify')}>
+          <a className="brand" href="#main" aria-label="ReturnScan home" onClick={startNewReturn}>
             <LayeredIcon className="brand-icon">
               <img src={logoPlate} alt="" />
               <img src={logoMark} alt="" />
@@ -302,15 +304,6 @@ function Workstation({ session, onSignOut }) {
               onClick={() => setScreen('account')}
             >
               Return History
-            </button>
-            <button className="nav-link queue-link" type="button">
-              Review Queue
-              {preferences.queueNotifications ? (
-                <LayeredIcon className="notification-badge">
-                  <img src={notificationBubble} alt="" />
-                  <span>3</span>
-                </LayeredIcon>
-              ) : null}
             </button>
           </nav>
 
@@ -350,7 +343,7 @@ function Workstation({ session, onSignOut }) {
               role={clickable ? 'button' : undefined}
               tabIndex={clickable ? 0 : undefined}
               aria-label={clickable ? `Open ${title.toLowerCase()}` : undefined}
-              title={clickable && !canOpenStep(returnCase, step) ? 'Opens with the sample return ORD-8921' : undefined}
+              title={clickable && !canOpenStep(returnCase, step) ? 'Complete the inspection before opening this step' : undefined}
               onClick={clickable ? () => openStep(step) : undefined}
               onKeyDown={clickable ? (event) => {
                 if (event.key === 'Enter' || event.key === ' ') openStep(step)
@@ -516,16 +509,14 @@ function Workstation({ session, onSignOut }) {
       ) : screen === 'inspection' ? (
         <ItemInspection
           returnCase={returnCase}
-          scan={caseScans[caseId]}
+          scan={activeScan}
           onScanChange={updateScan}
-          onBack={() => openStep('identify')}
           onContinue={continueToReview}
         />
       ) : (
         <ReviewDecision
           returnCase={returnCase}
-          scan={caseScans[caseId]}
-          onIdentify={() => openStep('identify')}
+          scan={activeScan}
           onBack={() => openStep('inspection')}
           onSubmitDecision={completeReturn}
           reviewerName={user.name}

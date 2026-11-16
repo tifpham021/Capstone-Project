@@ -1,22 +1,22 @@
-.scan-order-dialog { box-sizing: border-box; width: min(680px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; padding: 20px; border: 1px solid #dce5e4; border-radius: 16px; color: #173c41; background: white; box-shadow: 0 20px 80px #102c3d40; }
+.scan-order-dialog { width: min(600px, calc(100vw - 32px)); max-height: calc(100dvh - 40px); overflow: auto; padding: 28px; border: 1px solid #dbe3ee; border-radius: 16px; color: #172033; background: white; box-shadow: 0 24px 80px #102c3d40; }
 .scan-order-dialog::backdrop { background: #12202d99; }
 .scan-order-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
-.scan-order-heading h2 { margin: 0 0 8px; }
-.scan-order-heading p { margin: 0 0 20px; color: #52616b; line-height: 1.5; }
-.scan-order-lookup label { display: block; font-weight: 600; margin-bottom: 8px; }
-.scan-order-entry { display: grid; grid-template-columns: minmax(0, 1fr) minmax(210px, 1fr); gap: 24px; align-items: center; }
-.scan-order-actions { display: flex; flex-direction: column; min-width: 0; }
-.scan-order-lookup input { box-sizing: border-box; width: 100%; min-width: 0; padding: 12px; border: 1px solid #aabdbd; border-radius: 8px; font: inherit; font-size: 28px; font-weight: 600; }
-.scan-order-actions .continue-button { width: 100%; min-height: 56px; margin-top: 20px; }
-.scan-order-numpad { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.scan-order-numpad button { min-height: 56px; border: 1px solid #bdcdd1; background: #f2f7f6; color: #173c41; font: inherit; font-size: 24px; font-weight: 600; touch-action: manipulation; }
-.scan-order-numpad button:nth-last-child(3) { font-size: 16px; }
-.scan-order-numpad button:active { background: #cde7df; }
-.scan-order-numpad button:disabled { opacity: .5; }
-@media (max-height: 500px) { .scan-order-dialog { padding: 16px; } .scan-order-heading p { margin-bottom: 12px; } .scan-order-numpad button { min-height: 48px; } }
-@media (max-width: 450px) { .scan-order-entry { gap: 12px; grid-template-columns: minmax(0, 1fr) minmax(170px, 1fr); } .scan-order-numpad { gap: 6px; } .scan-order-lookup input { font-size: 20px; } .scan-order-numpad button { padding: 8px; } }
-.scan-order-dialog button { padding: 10px 16px; min-height: 44px; border-radius: 8px; }
-.scan-order-dialog button:focus-visible, .scan-order-dialog input:focus-visible { outline: 3px solid #5373dd; outline-offset: 3px; }
+.scan-order-heading > div > span { display:block; margin-bottom:5px; color:#7b8495; font-size:11px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; }
+.scan-order-heading h2 { margin: 0 0 8px; color:#172033; font-size:27px; line-height:1.15; }
+.scan-order-heading p { margin: 0 0 22px; color: #687386; font-size:14px; line-height: 1.5; }
+.scan-order-close { width:44px; height:44px; flex:0 0 auto; padding:0 !important; border:1px solid #cbd5e1; border-radius:9px !important; color:#475569; background:#fff; font-size:25px; line-height:1; }
+.scan-order-lookup label { display: block; margin-bottom: 8px; color:#344054; font-weight: 700; }
+.scan-order-input-row { display: grid; grid-template-columns:minmax(0, 1fr) 142px; gap: 10px; }
+.scan-order-lookup input { width:100%; min-width: 0; height:52px; padding: 0 15px; border: 1px solid #aebbd0; border-radius: 9px; color:#172033; font: inherit; font-size:16px; }
+.scan-order-submit { min-height:52px !important; padding:0 16px !important; border:1px solid #4169e1; border-radius:9px !important; color:#fff; background:#4169e1; font-size:14px; font-weight:800; }
+.scan-order-submit:hover:not(:disabled) { background:#3158c4; }
+.scan-order-keypad { width:min(360px, 100%); display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin:16px auto 0; }
+.scan-order-keypad button { min-height:48px; padding:0; border:1px solid #d3dceb; border-radius:9px; color:#27324a; background:#f8fafc; font-size:17px; font-weight:700; cursor:pointer; }
+.scan-order-keypad button:hover:not(:disabled) { border-color:#9eb2ee; background:#eef3ff; }
+.scan-order-keypad .keypad-action { color:#52616b; font-size:13px; }
+.scan-order-keypad .keypad-delete { color:#3158c4; font-size:20px; }
+.scan-order-dialog button:focus-visible, .scan-order-dialog input:focus-visible { outline: 3px solid rgb(65 105 225 / 28%); outline-offset: 3px; }
+.scan-order-dialog button:disabled { opacity:.5; cursor:wait; }
 .scan-order-help { font-size: 14px; line-height: 1.5; color: #52616b; margin: 16px 0 0; }
 .scan-order-comparison { margin: 20px 0; padding: 20px; border: 1px solid #dce5e4; border-radius: 12px; background: #f7faf9; }
 .scan-order-comparison h3 { margin: 6px 0; }
@@ -28,3 +28,8 @@
 .scan-weight-metrics dd { margin: 6px 0 0; font-weight: 600; }
 .weight-pass { color: #1c6241; }
 .weight-fail { color: #943824; }
+
+@media (max-width: 560px) {
+  .scan-order-dialog { padding:22px; }
+  .scan-order-input-row { grid-template-columns:1fr; }
+}

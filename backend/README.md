@@ -3,6 +3,7 @@
 This is the functional **Scan item** workflow on `local-ui-rectangle-alignment`.
 The Pi's one/two-camera capture, stillness gate, job IDs and polling routes are
 preserved. GPT-6 Luna (reasoning off) is now the default decision engine.
+All Luna API requests use `service_tier: "priority"` to request Fast mode.
 
 ## Pi setup
 
@@ -73,8 +74,11 @@ reference is enrolled automatically; see [sample attribution](samples/README.md)
 Replace that photo with your own verified reference using the enrollment routes
 or `backend/enroll_iphone15.py`.
 
-The **demo** sensor samples uniformly within ±5% of 171 g: **162.45–179.55 g**.
-The weight tolerance is also ±5%, so this simulated reading passes by design.
+The **demo** sensor alternates between the expected weight ±5% on odd scans
+and half the expected weight ±5% on even scans. For 171 g, those ranges are
+**162.45–179.55 g** and approximately **81.22–89.78 g**, respectively.
+The scan counter stays in backend memory and resets on startup. The weight
+tolerance is ±5% of the expected weight, so even scans fail the weight check.
 It demonstrates the comparison UI; it is not a real scale measurement. Weight is
 sampled once per scan and stays fixed during polling. A visual mismatch or failed
 weight check makes the combined result suspicious; missing or inconclusive visual

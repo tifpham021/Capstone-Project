@@ -60,14 +60,21 @@ def test_weight_comparison_bounds(weight, matches):
     assert compare_weight(DEMO_ORDER, weight)["within_tolerance"] is matches
 
 
-def test_demo_sensor_only_returns_expected_plus_or_minus_five_percent():
+def test_demo_sensor_alternates_full_and_half_weight_plus_or_minus_five_percent():
     sensor = DemoWeightSensor()
-    for _ in range(200):
+    for scan_number in range(1, 201):
         result = sensor.check(DEMO_ORDER)
-        assert 162.45 <= result["measured_weight_g"] <= 179.55
-        assert result["within_tolerance"]
+        if scan_number % 2:
+            assert 162.45 <= result["measured_weight_g"] <= 179.55
+        else:
+            assert 81.22 <= result["measured_weight_g"] <= 89.78
+        assert result["within_tolerance"] is bool(scan_number % 2)
         assert result["sensor_mode"] == "demo"
         assert result["expected_weight_g"] == 171
+
+    # A fresh backend sensor starts with a correct reading again.
+    sensor.check(DEMO_ORDER)
+    assert DemoWeightSensor().check(DEMO_ORDER)["within_tolerance"]
 
 
 @pytest.mark.parametrize("weight", [float("nan"), float("inf"), -1, 0])

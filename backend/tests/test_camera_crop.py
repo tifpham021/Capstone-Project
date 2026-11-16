@@ -40,3 +40,26 @@ def test_dim_bluish_earbud_is_not_discarded_as_table():
     x0, y0, x1, y1 = bounds
     assert x0 < 588 < 632 < x1
     assert y0 < 508 < 552 < y1
+
+
+def test_product_above_old_region_is_not_hidden_by_boundary_glare():
+    frame = np.full((960, 1280, 3), 150, dtype=np.uint8)
+    frame[384:444, 536:588] = 230
+    # A large reflection extends beyond the bottom inspection boundary.
+    frame[600:960, 700:1000] = 230
+    x0, y0, x1, y1 = object_bounds(frame)
+    assert x0 < 536 < 588 < x1
+    assert y0 < 384 < 444 < y1
+    assert x1 < 700
+
+
+def test_bright_product_touching_dark_table_scratch_still_gets_cropped():
+    frame = np.full((960, 1280, 3), 150, dtype=np.uint8)
+    frame[404:464, 552:596] = 230
+    # The scratch connects the product to the excluded left table edge.
+    frame[424:432, 0:556] = 40
+    bounds = object_bounds(frame)
+    assert bounds is not None
+    x0, y0, x1, y1 = bounds
+    assert 0 < x0 < 552 < 596 < x1 < 1280
+    assert y0 < 404 < 464 < y1

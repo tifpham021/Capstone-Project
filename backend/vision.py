@@ -98,6 +98,7 @@ class LunaClient:
                 )
         payload = {
             "model": self.settings.openai_model,
+            "service_tier": "priority",
             "reasoning": {"effort": self.settings.openai_reasoning},
             "store": False,
             "max_output_tokens": 2400,

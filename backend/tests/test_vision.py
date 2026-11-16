@@ -148,6 +148,7 @@ def test_luna_schema_flags_and_individual_images(setup):
     payload = state["calls"][0]
     assert payload["model"] == "gpt-6-luna" and payload["reasoning"] == {"effort": "none"}
     assert payload["store"] is False
+    assert payload["service_tier"] == "priority"
     assert set(payload["text"]["format"]["schema"]["properties"]) == {
         "verdict",
         "verdict_confidence",
@@ -215,7 +216,6 @@ def test_camera_crop_is_same_framing_in_provider_and_display(setup):
 
     import cv2
     import numpy as np
-
     from backend.camera_crop import adaptive_crop
 
     client, service, state = setup

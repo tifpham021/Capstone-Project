@@ -91,8 +91,14 @@ def compare_weight(order, measured_weight_g):
 
 
 class DemoWeightSensor:
+    def __init__(self):
+        # Kept only for this backend lifetime; the first scan uses the full weight.
+        self.scan_count = 0
+
     def read(self, expected_weight_g):
-        return round(expected_weight_g * random.SystemRandom().uniform(0.95, 1.05), 2)
+        self.scan_count += 1
+        target_weight_g = expected_weight_g if self.scan_count % 2 else expected_weight_g / 2
+        return round(target_weight_g * random.SystemRandom().uniform(0.95, 1.05), 2)
 
     def check(self, order):
         return {

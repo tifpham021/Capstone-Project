@@ -11,17 +11,37 @@ def object_bounds(im):
     a = cv2.resize(im, (320, round(h * s)), interpolation=cv2.INTER_AREA)
     g = cv2.cvtColor(a, cv2.COLOR_BGR2GRAY)
     hsv = cv2.cvtColor(a, cv2.COLOR_BGR2HSV)
-    mask = np.uint8(((g < 100) & (hsv[:, :, 1] < 140)) | ((g > 195) & (hsv[:, :, 1] < 100))) * 255
     H, W = g.shape
-    mask[: int(H * 0.45)] = 0
-    mask[int(H * 0.97) :] = 0
-    mask[:, : int(W * 0.14)] = 0
-    mask[:, int(W * 0.86) :] = 0
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
-    _, _, stats, centroids = cv2.connectedComponentsWithStats(mask)
+    components = []
+    # Segment light and dark objects separately: joining both masks lets a
+    # bright product connect to dark table scratches and become one huge blob.
+    for pixels in (
+        (g < 100) & (hsv[:, :, 1] < 140),
+        (g > 195) & (hsv[:, :, 1] < 100),
+    ):
+        mask = np.uint8(pixels) * 255
+        mask[: int(H * 0.30)] = 0
+        mask[int(H * 0.97) :] = 0
+        mask[:, : int(W * 0.14)] = 0
+        mask[:, int(W * 0.86) :] = 0
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+        _, _, stats, centroids = cv2.connectedComponentsWithStats(mask)
+        components.extend(zip(stats[1:], centroids[1:]))
     candidates = []
-    for (x, y, bw, bh, area), (cx, cy) in zip(stats[1:], centroids[1:]):
+    for (x, y, bw, bh, area), (cx, cy) in components:
         if area < 20 or area > H * W * 0.22 or bw > W * 0.65 or bh > H * 0.55:
+            continue
+        # Thin scratches and disconnected shadows are poor product candidates.
+        if area / (bw * bh) < 0.4:
+            continue
+        # Ignore incomplete table edges/glare before ranking so they cannot
+        # hide a valid product elsewhere in the inspection region.
+        if (
+            x <= int(W * 0.14)
+            or y <= int(H * 0.30)
+            or x + bw >= int(W * 0.86)
+            or y + bh >= int(H * 0.97)
+        ):
             continue
         dist = ((cx / W - 0.5) / 0.35) ** 2 + ((cy / H - 0.65) / 0.4) ** 2
         score = area**0.4 * np.exp(-dist * 2)
@@ -30,14 +50,6 @@ def object_bounds(im):
         return None
     score, (x, y, bw, bh), area = max(candidates)
     if score < 2.2:
-        return None
-    # A target touching the inspection boundary may be incomplete. Keep full view.
-    if (
-        x <= int(W * 0.14)
-        or y <= int(H * 0.45)
-        or x + bw >= int(W * 0.86)
-        or y + bh >= int(H * 0.97)
-    ):
         return None
     pad = max(12, round(max(bw, bh) * 0.3))
     x0 = max(0, x - pad)

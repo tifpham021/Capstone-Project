@@ -1228,6 +1228,60 @@
   height: 100%;
 }
 
+.desktop-camera-view.comparison {
+  padding: 8px;
+}
+
+.desktop-camera-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+}
+
+.desktop-camera-comparison figure {
+  position: relative;
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid #dbe3ee;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.desktop-camera-comparison a,
+.desktop-camera-comparison img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.desktop-camera-comparison img {
+  object-fit: contain;
+  background: #eef2f7;
+}
+
+.desktop-camera-comparison figcaption {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: #fff;
+  background: rgb(49 88 196 / 92%);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  box-shadow: 0 2px 7px rgb(15 23 42 / 12%);
+}
+
+.desktop-camera-comparison figcaption.reference {
+  background: rgb(22 121 74 / 92%);
+}
+
 .desktop-camera-view img {
   object-fit: contain;
   background: #eef2f7;
@@ -1538,7 +1592,8 @@
   border-radius: 999px;
   color: #16794a;
   background: #ecfdf3;
-  font-size: 10px;
+  font-size: 16px;
+  line-height: 1;
 }
 
 .desktop-analysis-checks {

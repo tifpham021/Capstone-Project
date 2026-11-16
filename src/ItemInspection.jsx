@@ -71,6 +71,10 @@ export default function ItemInspection({ onBack, onContinue, scan, onScanChange 
     || verification?.original_image_url
     || verification?.normalized_image_url
   const cameraImage = artifactUrl(cameraImagePath)
+  const referenceImagePath = verification?.annotated_reference_image_url
+    || verification?.reference_image_url
+    || verification?.normalized_reference_image_url
+  const referenceImage = artifactUrl(referenceImagePath)
   const visualDecision = verification?.decision
   const photoCount = scan?.results?.length || 0
 
@@ -185,8 +189,23 @@ export default function ItemInspection({ onBack, onContinue, scan, onScanChange 
               <div><span>Camera</span><h2>Item view</h2></div>
               <strong className={`desktop-state-pill ${stage}`} role="status" aria-live="polite">{stage === 'scanning' ? 'Scanning' : stage === 'complete' ? 'Complete' : 'Ready'}</strong>
             </header>
-            <div className="desktop-camera-view">
-              {cameraImage ? (
+            <div className={`desktop-camera-view${cameraImage && referenceImage ? ' comparison' : ''}`}>
+              {cameraImage && referenceImage ? (
+                <div className="desktop-camera-comparison">
+                  <figure>
+                    <a href={referenceImage} target="_blank" rel="noreferrer" aria-label="Open enrolled reference image">
+                      <img src={referenceImage} alt="Enrolled product reference" />
+                    </a>
+                    <figcaption className="reference">Reference</figcaption>
+                  </figure>
+                  <figure>
+                    <a href={cameraImage} target="_blank" rel="noreferrer" aria-label="Open captured item image">
+                      <img src={cameraImage} alt="Captured returned item" />
+                    </a>
+                    <figcaption>Captured</figcaption>
+                  </figure>
+                </div>
+              ) : cameraImage ? (
                 <a href={cameraImage} target="_blank" rel="noreferrer" aria-label="Open captured item image">
                   <img src={cameraImage} alt="Captured returned item" />
                   <span>Captured item</span>

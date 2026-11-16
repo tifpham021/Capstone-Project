@@ -38,6 +38,7 @@ import {
   transitionReturn,
 } from './returnLifecycle.js'
 import './App.css'
+import './Compact.css'
 
 const workflowSteps = [
   ['1', 'Identify return', 'Scan or look up the item'],

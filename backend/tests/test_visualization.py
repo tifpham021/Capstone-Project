@@ -1,11 +1,11 @@
 """Image preprocessing and edge-difference tests without models or downloads."""
+
 import unittest
 from unittest.mock import patch
 
 import numpy as np
-from PIL import Image, ImageDraw
-
 from backend.visualization import foreground, major_discrepancies, normalized_pair
+from PIL import Image, ImageDraw
 
 
 def phone(color="#181a1b"):
@@ -45,19 +45,23 @@ class VisualizationTests(unittest.TestCase):
         draw.rectangle((10, 0, 89, 9), fill="green")
         draw.rectangle((10, 70, 89, 79), fill="yellow")
         transforms = [
-            np.array([[1., 0, x], [0, 1., y], [0, 0, 1.]])
-            for x, y in [(70, 50), (-70, -50)]
+            np.array([[1.0, 0, x], [0, 1.0, y], [0, 0, 1.0]]) for x, y in [(70, 50), (-70, -50)]
         ]
-        transforms.append(np.array([[.8, -.6, 50], [.6, .8, -30], [0, 0, 1.]]))
-        with patch("backend.visualization.foreground", return_value=(
-                np.asarray(image), np.ones((80, 100), np.uint8), True)):
+        transforms.append(np.array([[0.8, -0.6, 50], [0.6, 0.8, -30], [0, 0, 1.0]]))
+        with patch(
+            "backend.visualization.foreground",
+            return_value=(np.asarray(image), np.ones((80, 100), np.uint8), True),
+        ):
             for matrix in transforms:
                 with self.subTest(matrix=matrix):
                     _, query, _ = normalized_pair(image, image, matrix, True)
                     pixels = np.asarray(query)
                     for color in [(255, 0, 0), (0, 0, 255), (0, 128, 0), (255, 255, 0)]:
-                        self.assertTrue(np.any(np.all(pixels[..., :3] == color, axis=2)
-                                               & (pixels[..., 3] == 255)))
+                        self.assertTrue(
+                            np.any(
+                                np.all(pixels[..., :3] == color, axis=2) & (pixels[..., 3] == 255)
+                            )
+                        )
                     self.assertFalse(np.any(pixels[[0, -1], :, 3]))
                     self.assertFalse(np.any(pixels[:, [0, -1], 3]))
 
@@ -68,8 +72,12 @@ class VisualizationTests(unittest.TestCase):
         overlay, regions = major_discrepancies(reference, changed)
         self.assertGreaterEqual(len(regions), 1)
         self.assertLessEqual(len(regions), 8)
-        self.assertTrue(any(r["x"] < 220 < r["x"] + r["width"] and
-                            r["y"] < 225 < r["y"] + r["height"] for r in regions))
+        self.assertTrue(
+            any(
+                r["x"] < 220 < r["x"] + r["width"] and r["y"] < 225 < r["y"] + r["height"]
+                for r in regions
+            )
+        )
         self.assertEqual(overlay.getpixel((0, 0)), changed.getpixel((0, 0)))
 
     def test_small_alignment_shift_is_ignored(self):
@@ -89,7 +97,9 @@ class VisualizationTests(unittest.TestCase):
     def test_rotation_is_applied_from_matched_geometry(self):
         image = phone()
         rotated = image.transpose(Image.Transpose.ROTATE_180)
-        matrix = np.array([[-1., 0., image.width - 1], [0., -1., image.height - 1], [0., 0., 1.]])
+        matrix = np.array(
+            [[-1.0, 0.0, image.width - 1], [0.0, -1.0, image.height - 1], [0.0, 0.0, 1.0]]
+        )
         reference, query, removed = normalized_pair(image, rotated, matrix, True)
         self.assertTrue(removed)
         self.assertLess(np.abs(np.asarray(reference).astype(float) - np.asarray(query)).mean(), 1)

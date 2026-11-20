@@ -12,6 +12,7 @@ import torch.nn.functional as F
 from backend.algorithms import Features, letterbox
 from backend.alignment import RectangleError, rectify_rectangle
 from backend.config import Settings
+from backend.foreground import Foreground, crop_foreground
 from backend.main import create_app
 from backend.service import VerificationService
 from fastapi.testclient import TestClient
@@ -40,6 +41,12 @@ class SpatialModels:
         raise AssertionError("Default rectangle alignment must not load ALIKED/LightGlue")
 
 
+class SyntheticSegmenter:
+    def prepare(self, image):
+        mask = (np.asarray(image).min(-1) < 240).astype(np.uint8) * 255
+        return crop_foreground(image, mask)
+
+
 def encode(image):
     stream = io.BytesIO()
     image.save(stream, "PNG")
@@ -59,7 +66,7 @@ def patterned_object():
 @pytest.fixture
 def rectangle_api(tmp_path):
     settings = Settings(data_dir=tmp_path)
-    service = VerificationService(settings, SpatialModels())
+    service = VerificationService(settings, SpatialModels(), SyntheticSegmenter())
     with TestClient(create_app(settings, service)) as client:
         reference = patterned_object()
         response = client.post(
@@ -132,17 +139,28 @@ def test_degenerate_foreground_does_not_produce_transform():
             rectify_rectangle(image, mask)
 
 
-def test_failed_rectangle_returns_original_capture_and_inconclusive_result(rectangle_api, monkeypatch):
-    _, client, reference = rectangle_api
+def test_failed_rectangle_returns_original_capture_and_inconclusive_result(
+    rectangle_api, monkeypatch
+):
+    service, client, reference = rectangle_api
+    service.verify(
+        encode(reference)
+    )  # Index the usable reference before simulating a query failure.
     # Unusable segmentation must never produce a successful rectangle fit.
-    monkeypatch.setattr("backend.service.foreground", lambda image: (
-        np.asarray(image), np.ones((image.height, image.width), np.uint8), False))
+    monkeypatch.setattr(
+        service.segmenter,
+        "prepare",
+        lambda image: Foreground(
+            image, np.ones((image.height, image.width), np.uint8), 0.0, False, "No foreground"
+        ),
+    )
     response = client.post("/v1/verify", files={"file": ("q.png", encode(reference), "image/png")})
     assert response.status_code == 200, response.text
     result = response.json()
     assert result["decision"] == "inconclusive"
     assert result["geometry"]["alignment_quality"] == "failed"
     assert result["normalization_alignment"] == "orientation_only"
-    assert result["discrepancy_image_url"] is None
+    assert result["score_is_informational"]
+    assert not result["discrepancy_regions"]
     capture = Image.open(io.BytesIO(client.get(result["capture_image_url"]).content))
     np.testing.assert_array_equal(np.asarray(capture), np.asarray(reference))

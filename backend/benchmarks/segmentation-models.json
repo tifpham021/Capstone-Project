@@ -1,0 +1,418 @@
+{
+  "note": "Warm CPU segmentation including resizing and cropping. Mask agreement is not segmentation accuracy.",
+  "repeats": 2,
+  "results": [
+    {
+      "model": "u2netp",
+      "input_shape": [
+        1,
+        3,
+        320,
+        320
+      ],
+      "providers": [
+        "CPUExecutionProvider"
+      ],
+      "weights_bytes": 4574861,
+      "initialization_and_first_image_ms": 569.0725829917938,
+      "median_ms": 105.92523949162569,
+      "samples": [
+        {
+          "image": "source/iphone17_real_ref.jpg",
+          "sha256": "3cbf9d61a2618cea647466ca8df07d84c64667efbe8929ddb8d2b77766cb6513",
+          "latency_ms": [
+            126.94162497064099,
+            99.96795898769051
+          ],
+          "median_ms": 113.45479197916575,
+          "foreground_fraction": 0.24103877314814814,
+          "valid": true
+        },
+        {
+          "image": "source/iphone17_real_query.webp",
+          "sha256": "71d9b9868b58a96a3bd0af0e37a22d3a920c6374deb8a5bae766997beb60b722",
+          "latency_ms": [
+            103.74491603579372,
+            97.14070899644867
+          ],
+          "median_ms": 100.4428125161212,
+          "foreground_fraction": 0.29798551117653893,
+          "valid": true
+        },
+        {
+          "image": "source/iphone15_real_query.jpg",
+          "sha256": "3fc173fd2d11991eaaa97684a8c0458701b82f88459751ee4df9529a96680c4f",
+          "latency_ms": [
+            132.8180000418797,
+            133.24275001650676
+          ],
+          "median_ms": 133.03037502919324,
+          "foreground_fraction": 0.2682880208333333,
+          "valid": true
+        },
+        {
+          "image": "mvtec-ad-bottle-01/reference.png",
+          "sha256": "8a25eb07475a5102f4823fefd82662dd65f8f2a0a333bf958124ceeee38f0e38",
+          "latency_ms": [
+            104.17133301962167,
+            102.4427919765003
+          ],
+          "median_ms": 103.30706249806099,
+          "foreground_fraction": 0.6445604938271605,
+          "valid": true
+        },
+        {
+          "image": "mvtec-ad-bottle-01/negative.png",
+          "sha256": "11a691a06a33dd78c5fcab6a822caa48c0d72f27f660e19f5abd9b5aa392b0eb",
+          "latency_ms": [
+            102.0423750160262,
+            98.79754204303026
+          ],
+          "median_ms": 100.41995852952823,
+          "foreground_fraction": 0.6392148148148148,
+          "valid": true
+        },
+        {
+          "image": "mvtec-ad-cable-01/reference.png",
+          "sha256": "7457390d52de2e34f706abcbc1185da287a5dfd90573af23fef6816fa5d7a1aa",
+          "latency_ms": [
+            108.89304097509012,
+            108.19379199529067
+          ],
+          "median_ms": 108.54341648519039,
+          "foreground_fraction": 0.23846912384033203,
+          "valid": true
+        },
+        {
+          "image": "mvtec-ad-metal_nut-01/reference.png",
+          "sha256": "b0309325bc305ae8b19246884f20397b951285786aecca0ebf1d009e9799e350",
+          "latency_ms": [
+            98.94837503088638,
+            99.86554202623665
+          ],
+          "median_ms": 99.40695852856152,
+          "foreground_fraction": 0.5116918367346939,
+          "valid": true
+        },
+        {
+          "image": "visa-pcb1-01/reference.jpg",
+          "sha256": "f133691fc7831400ea71d83d38b0b94416729915adab6123fc20d2811e2c399d",
+          "latency_ms": [
+            124.43116697249934,
+            116.51604197686538
+          ],
+          "median_ms": 120.47360447468236,
+          "foreground_fraction": 0.2747503794232766,
+          "valid": true
+        }
+      ],
+      "mask_iou_vs_last_model": [
+        0.9516288667214521,
+        0.9944653272845106,
+        0.9960269623898693,
+        0.7822001402046375,
+        0.8780334707830773,
+        0.5248120395546945,
+        0.9187848234548058,
+        0.9721643885217706
+      ]
+    },
+    {
+      "model": "birefnet-general-lite",
+      "input_shape": [
+        1,
+        3,
+        1024,
+        1024
+      ],
+      "providers": [
+        "CPUExecutionProvider"
+      ],
+      "weights_bytes": 224005088,
+      "initialization_and_first_image_ms": 5826.679957972374,
+      "median_ms": 3960.3477500058943,
+      "samples": [
+        {
+          "image": "source/iphone17_real_ref.jpg",
+          "sha256": "3cbf9d61a2618cea647466ca8df07d84c64667efbe8929ddb8d2b77766cb6513",
+          "latency_ms": [
+            5574.372167000547,
+            4122.269207960926
+          ],
+          "median_ms": 4848.3206874807365,
+          "foreground_fraction": 0.22967592592592592,
+          "valid": true
+        },
+        {
+          "image": "source/iphone17_real_query.webp",
+          "sha256": "71d9b9868b58a96a3bd0af0e37a22d3a920c6374deb8a5bae766997beb60b722",
+          "latency_ms": [
+            3796.081792039331,
+            3554.9870830145665
+          ],
+          "median_ms": 3675.5344375269488,
+          "foreground_fraction": 0.2981211017704258,
+          "valid": true
+        },
+        {
+          "image": "source/iphone15_real_query.jpg",
+          "sha256": "3fc173fd2d11991eaaa97684a8c0458701b82f88459751ee4df9529a96680c4f",
+          "latency_ms": [
+            3487.202958029229,
+            3541.969167010393
+          ],
+          "median_ms": 3514.586062519811,
+          "foreground_fraction": 0.26812135416666666,
+          "valid": true
+        },
+        {
+          "image": "mvtec-ad-bottle-01/reference.png",
+          "sha256": "8a25eb07475a5102f4823fefd82662dd65f8f2a0a333bf958124ceeee38f0e38",
+          "latency_ms": [
+            3833.3079160074703,
+            4023.562000016682
+          ],
+          "median_ms": 3928.434958012076,
+          "foreground_fraction": 0.5041753086419754,
+          "valid": true
+        },
+        {
+          "image": "mvtec-ad-bottle-01/negative.png",
+          "sha256": "11a691a06a33dd78c5fcab6a822caa48c0d72f27f660e19f5abd9b5aa392b0eb",
+          "latency_ms": [
+            3985.15199997928,
+            4142.179083020892
+          ],
+          "median_ms": 4063.665541500086,
+          "foreground_fraction": 0.5612543209876544,
+          "valid": true
+        },
+        {
+          "image": "mvtec-ad-cable-01/reference.png",
+          "sha256": "7457390d52de2e34f706abcbc1185da287a5dfd90573af23fef6816fa5d7a1aa",
+          "latency_ms": [
+            3854.5439169974998,
+            3629.2061249841936
+          ],
+          "median_ms": 3741.8750209908467,
+          "foreground_fraction": 0.4535694122314453,
+          "valid": true
+        },
+        {
+          "image": "mvtec-ad-metal_nut-01/reference.png",
+          "sha256": "b0309325bc305ae8b19246884f20397b951285786aecca0ebf1d009e9799e350",
+          "latency_ms": [
+            4218.435792019591,
+            3766.0852919798344
+          ],
+          "median_ms": 3992.2605419997126,
+          "foreground_fraction": 0.470134693877551,
+          "valid": true
+        },
+        {
+          "image": "visa-pcb1-01/reference.jpg",
+          "sha256": "f133691fc7831400ea71d83d38b0b94416729915adab6123fc20d2811e2c399d",
+          "latency_ms": [
+            4395.255749986973,
+            3648.262207978405
+          ],
+          "median_ms": 4021.758978982689,
+          "foreground_fraction": 0.2763366349814948,
+          "valid": true
+        }
+      ]
+    }
+  ],
+  "date": "2026-11-10",
+  "platform": "Apple M4, arm64",
+  "visual_inspection": {
+    "phones": "Masks broadly agree; small model includes a small extra background strip on the first reference.",
+    "bottles": "Small model includes more of the glass rim than BiRefNet Lite.",
+    "cable": "Small model misses the outer insulation/jacket.",
+    "metal_nut": "Small model fills the central hole; BiRefNet Lite leaves it out.",
+    "pcb": "Masks broadly agree."
+  },
+  "ground_truth_foreground_masks_available": false,
+  "http_smoke": [
+    {
+      "query": "rotated-genuine.png",
+      "iteration": 0,
+      "decision": "consistent",
+      "confidence_percent": 99.81,
+      "geometry": {
+        "backend": "ALIKED+LightGlue",
+        "matches": 780,
+        "inliers": 772,
+        "inlier_ratio": 0.9897435897435898,
+        "coverage": 0.5913149739318974,
+        "score": 1.0,
+        "alignment_valid": true,
+        "estimator": "USAC_MAGSAC",
+        "query_coverage": 0.5920236028992165,
+        "median_reprojection_error": 0.455735981464386,
+        "rejection_reason": null,
+        "foreground_iou": 0.9965497709415317,
+        "reference_index": 0,
+        "references_attempted": 1
+      },
+      "segmentation": {
+        "model": "u2netp",
+        "valid": true,
+        "query_foreground_fraction": 0.5213839506172839,
+        "reference_foreground_fraction": 0.6445604938271605
+      },
+      "patchcore": {
+        "anomaly_score": 0.007480958476662636,
+        "normality_score": 1.0,
+        "method": "aligned_spatial"
+      },
+      "latency_ms": {
+        "preprocessing": 9.295249998103827,
+        "queue_wait": 0.10562501847743988,
+        "model_and_index_load": 1403.0792500125244,
+        "segmentation": 125.6666659610346,
+        "retrieval": 46.37866700068116,
+        "geometry": 2881.4465000177734,
+        "patchcore": 75.9606669889763,
+        "visualization": 134.99058299930766,
+        "total": 4676.923207996879
+      },
+      "discrepancy_image_url": "/v1/results/1f9f2659d88646e5a46dc8db5ece8afa/discrepancy.png"
+    },
+    {
+      "query": "reference.png",
+      "iteration": 0,
+      "decision": "consistent",
+      "confidence_percent": 100.0,
+      "geometry": {
+        "backend": "ALIKED+LightGlue",
+        "matches": 1143,
+        "inliers": 1143,
+        "inlier_ratio": 1.0,
+        "coverage": 0.6132880285925523,
+        "score": 1.0,
+        "alignment_valid": true,
+        "estimator": "USAC_MAGSAC",
+        "query_coverage": 0.6132880285925523,
+        "median_reprojection_error": 0.0,
+        "rejection_reason": null,
+        "foreground_iou": 1.0,
+        "reference_index": 0,
+        "references_attempted": 1
+      },
+      "segmentation": {
+        "model": "u2netp",
+        "valid": true,
+        "query_foreground_fraction": 0.6445604938271605,
+        "reference_foreground_fraction": 0.6445604938271605
+      },
+      "patchcore": {
+        "anomaly_score": 1.1920928955078125e-07,
+        "normality_score": 1.0,
+        "method": "aligned_spatial"
+      },
+      "latency_ms": {
+        "preprocessing": 9.63641598355025,
+        "queue_wait": 0.09454198880121112,
+        "model_and_index_load": 0.0018330174498260021,
+        "segmentation": 112.88179201073945,
+        "retrieval": 62.97554197954014,
+        "geometry": 1068.2436660281383,
+        "patchcore": 63.28050000593066,
+        "visualization": 154.0618339786306,
+        "total": 1471.1761249927804
+      },
+      "discrepancy_image_url": "/v1/results/98757574d83649faa1f3d1527c75932c/discrepancy.png"
+    },
+    {
+      "query": "rotated-genuine.png",
+      "iteration": 1,
+      "decision": "consistent",
+      "confidence_percent": 99.81,
+      "geometry": {
+        "backend": "ALIKED+LightGlue",
+        "matches": 780,
+        "inliers": 772,
+        "inlier_ratio": 0.9897435897435898,
+        "coverage": 0.5913149739318974,
+        "score": 1.0,
+        "alignment_valid": true,
+        "estimator": "USAC_MAGSAC",
+        "query_coverage": 0.5920236028992165,
+        "median_reprojection_error": 0.455735981464386,
+        "rejection_reason": null,
+        "foreground_iou": 0.9965497709415317,
+        "reference_index": 0,
+        "references_attempted": 1
+      },
+      "segmentation": {
+        "model": "u2netp",
+        "valid": true,
+        "query_foreground_fraction": 0.5213839506172839,
+        "reference_foreground_fraction": 0.6445604938271605
+      },
+      "patchcore": {
+        "anomaly_score": 0.007480958476662636,
+        "normality_score": 1.0,
+        "method": "aligned_spatial"
+      },
+      "latency_ms": {
+        "preprocessing": 10.486749990377575,
+        "queue_wait": 0.09216699982061982,
+        "model_and_index_load": 0.0010409858077764511,
+        "segmentation": 111.5808340255171,
+        "retrieval": 56.929250014945865,
+        "geometry": 1076.3249999727122,
+        "patchcore": 75.12787502491847,
+        "visualization": 134.62479098234326,
+        "total": 1465.167707996443
+      },
+      "discrepancy_image_url": "/v1/results/1d55eac47719461bb776d7d82ab83cfd/discrepancy.png"
+    },
+    {
+      "query": "reference.png",
+      "iteration": 1,
+      "decision": "consistent",
+      "confidence_percent": 100.0,
+      "geometry": {
+        "backend": "ALIKED+LightGlue",
+        "matches": 1143,
+        "inliers": 1143,
+        "inlier_ratio": 1.0,
+        "coverage": 0.6132880285925523,
+        "score": 1.0,
+        "alignment_valid": true,
+        "estimator": "USAC_MAGSAC",
+        "query_coverage": 0.6132880285925523,
+        "median_reprojection_error": 0.0,
+        "rejection_reason": null,
+        "foreground_iou": 1.0,
+        "reference_index": 0,
+        "references_attempted": 1
+      },
+      "segmentation": {
+        "model": "u2netp",
+        "valid": true,
+        "query_foreground_fraction": 0.6445604938271605,
+        "reference_foreground_fraction": 0.6445604938271605
+      },
+      "patchcore": {
+        "anomaly_score": 1.1920928955078125e-07,
+        "normality_score": 1.0,
+        "method": "aligned_spatial"
+      },
+      "latency_ms": {
+        "preprocessing": 10.009333025664091,
+        "queue_wait": 0.10229198960587382,
+        "model_and_index_load": 0.001166015863418579,
+        "segmentation": 110.39724998408929,
+        "retrieval": 54.7662089811638,
+        "geometry": 1076.1248330236413,
+        "patchcore": 67.11333297425881,
+        "visualization": 152.75579201988876,
+        "total": 1471.2702080141753
+      },
+      "discrepancy_image_url": "/v1/results/459bbf88c255445e8fd7db2a618a2313/discrepancy.png"
+    }
+  ]
+}

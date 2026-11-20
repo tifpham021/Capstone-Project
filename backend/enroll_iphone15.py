@@ -3,25 +3,33 @@
 Run from the repository root: python3 -m backend.enroll_iphone15 --reference /path/to/black-phone.jpg --replace
 Requires Pillow (already part of backend requirements), network, and a running API.
 """
+
 from __future__ import annotations
 
 import argparse
 import io
 import os
-from pathlib import Path
 import urllib.error
 import urllib.request
 import uuid
+from pathlib import Path
 
 
 def multipart(images):
     boundary = uuid.uuid4().hex
     parts = []
-    for name, value in {"product_id": "iphone-15", "name": "Apple iPhone 15 · Black",
-                        "sku": "IPHONE-15-BLACK"}.items():
-        parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode())
+    for name, value in {
+        "product_id": "iphone-15",
+        "name": "Apple iPhone 15 · Black",
+        "sku": "IPHONE-15-BLACK",
+    }.items():
+        parts.append(
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode()
+        )
     for index, image in enumerate(images):
-        parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="references"; filename="black-{index}.png"\r\nContent-Type: image/png\r\n\r\n'.encode())
+        parts.append(
+            f'--{boundary}\r\nContent-Disposition: form-data; name="references"; filename="black-{index}.png"\r\nContent-Type: image/png\r\n\r\n'.encode()
+        )
         parts.extend([image, b"\r\n"])
     parts.append(f"--{boundary}--\r\n".encode())
     return boundary, b"".join(parts)
@@ -30,8 +38,16 @@ def multipart(images):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--api", default="http://127.0.0.1:8000")
-    parser.add_argument("--reference", type=Path, action="append", required=True, help="Actual black phone photo; repeat for multiple views")
-    parser.add_argument("--replace", action="store_true", help="Replace existing iphone-15 references")
+    parser.add_argument(
+        "--reference",
+        type=Path,
+        action="append",
+        required=True,
+        help="Actual black phone photo; repeat for multiple views",
+    )
+    parser.add_argument(
+        "--replace", action="store_true", help="Replace existing iphone-15 references"
+    )
     args = parser.parse_args()
     try:
         from PIL import Image, ImageOps
@@ -53,8 +69,12 @@ def main():
         if os.getenv("RETURNSCAN_API_KEY"):
             headers["X-API-Key"] = os.environ["RETURNSCAN_API_KEY"]
         route = "/v1/products/iphone-15/references" if args.replace else "/v1/products"
-        request = urllib.request.Request(args.api.rstrip("/") + route,
-                                         data=body, headers=headers, method="PUT" if args.replace else "POST")
+        request = urllib.request.Request(
+            args.api.rstrip("/") + route,
+            data=body,
+            headers=headers,
+            method="PUT" if args.replace else "POST",
+        )
         with urllib.request.urlopen(request, timeout=120) as response:
             print(response.read().decode())
     except urllib.error.HTTPError as exc:

@@ -57,6 +57,7 @@ class Thresholds(BaseModel):
 
     min_retrieval_cosine: float = Field(default=0.45, ge=-1, lt=1)
     min_geometry_score: float = Field(default=0.52, ge=0, le=1)
+    max_foreground_difference: float = Field(default=0.30, ge=0, le=1)
     max_patchcore_anomaly: float = Field(default=0.43, gt=0, le=2)
     min_combined_score: float = Field(default=0.66, ge=0, le=1)
     patchcore_good: float = Field(default=0.24, ge=0, le=2)
@@ -91,9 +92,29 @@ class GeometryResult(BaseModel):
     coverage: float
     score: float = Field(ge=0, le=1)
     alignment_valid: bool
+    estimator: str = "USAC_MAGSAC"
+    query_coverage: float = 0
+    median_reprojection_error: float | None = None
+    rejection_reason: str | None = None
+    foreground_iou: float | None = None
+    reference_index: int = 0
+    references_attempted: int = 0
+    orientation_score: float | None = None
+    reference_corners: list[list[float]] | None = None
+    query_corners: list[list[float]] | None = None
+    reference_transform: list[list[float]] | None = None
+    query_transform: list[list[float]] | None = None
+    canvas_size: list[int] | None = None
     alignment_method: str = "features"
     alignment_quality: str = "unknown"
     rotation_degrees: int = 0
+
+
+class SegmentationResult(BaseModel):
+    model: str
+    valid: bool
+    query_foreground_fraction: float
+    reference_foreground_fraction: float
 
 
 class PatchCoreResult(BaseModel):
@@ -140,6 +161,7 @@ class VerificationResponse(BaseModel):
     identity_ambiguous: bool = False
     candidates: list[Candidate] = Field(default_factory=list)
     geometry: GeometryResult | None = None
+    segmentation: SegmentationResult | None = None
     patchcore: PatchCoreResult | None = None
     discrepancy_image_url: str | None = None
     capture_image_url: str | None = None

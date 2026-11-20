@@ -8,6 +8,8 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
+from pydantic import BaseModel
+
 from backend.common import ServiceError
 
 DEMO_ORDER = {
@@ -18,6 +20,16 @@ DEMO_ORDER = {
     "expected_weight_g": 171.0,
     "weight_tolerance_percent": 5.0,
 }
+
+
+class CameraOrder(BaseModel):
+    order_number: str
+    product_id: str
+    product_name: str
+    sku: str
+    expected_weight_g: float
+    weight_tolerance_percent: float
+    reference_count: int
 
 
 class OrderStore:

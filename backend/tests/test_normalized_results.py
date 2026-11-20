@@ -1,4 +1,5 @@
 """Service and image-route regressions with deterministic models; no downloads."""
+
 import asyncio
 import io
 import tempfile
@@ -9,13 +10,13 @@ from unittest.mock import patch
 import numpy as np
 import torch
 import torch.nn.functional as functional
-from PIL import Image
-
 from backend.algorithms import Features, LocalMatch
 from backend.config import Settings
 from backend.main import create_app
 from backend.service import ServiceError, VerificationService
+from backend.tests.test_rectangle_alignment import SyntheticSegmenter
 from backend.tests.test_visualization import phone
+from PIL import Image
 
 
 class Models:
@@ -31,12 +32,13 @@ class Models:
         vector = functional.normalize(torch.tensor([*mean, 1.0]), dim=0)
         return Features(vector, vector.repeat(1024, 1), torch.ones(1024, dtype=torch.bool))
 
-    def local_features(self, image):
+    def local_features(self, image, valid_mask=None):
         return image
 
-    def match(self, reference, query, ref_size):
-        return LocalMatch("ALIKED+LightGlue", 100, 90, .9, .8, .95,
-                          np.eye(3) if self.valid else None)
+    def match(self, reference, query, ref_size, *masks):
+        return LocalMatch(
+            "ALIKED+LightGlue", 100, 90, 0.9, 0.8, 0.95, np.eye(3) if self.valid else None
+        )
 
 
 def encoded(image):
@@ -48,29 +50,44 @@ def encoded(image):
 async def get(app, path, method="GET", body=b"", headers=None):
     messages = []
     delivered = False
+
     async def receive():
         nonlocal delivered
         if not delivered:
             delivered = True
             return {"type": "http.request", "body": body, "more_body": False}
         await asyncio.sleep(60)
+
     async def send(message):
         messages.append(message)
-    scope = {"type": "http", "asgi": {"version": "3.0", "spec_version": "2.4"}, "http_version": "1.1",
-             "method": method, "scheme": "http", "path": path, "raw_path": path.encode(),
-             "query_string": b"", "headers": headers or [], "client": ("127.0.0.1", 1),
-             "server": ("test", 80), "root_path": ""}
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.4"},
+        "http_version": "1.1",
+        "method": method,
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "headers": headers or [],
+        "client": ("127.0.0.1", 1),
+        "server": ("test", 80),
+        "root_path": "",
+    }
     task = asyncio.create_task(app(scope, receive, send))
     for _ in range(1000):
         if task.done():
             break
-        await asyncio.sleep(.01)
+        await asyncio.sleep(0.01)
     if not task.done():
         task.cancel()
         raise AssertionError("Image request timed out")
     await task
     start = next(message for message in messages if message["type"] == "http.response.start")
-    body = b"".join(message.get("body", b"") for message in messages if message["type"] == "http.response.body")
+    body = b"".join(
+        message.get("body", b"") for message in messages if message["type"] == "http.response.body"
+    )
     return start, body
 
 
@@ -80,30 +97,38 @@ class NormalizedResultsTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.models = Models()
         self.settings = Settings(data_dir=Path(self.directory.name), alignment_method="features")
-        self.service = VerificationService(self.settings, self.models)
+        self.service = VerificationService(self.settings, self.models, SyntheticSegmenter())
         self.photo = encoded(phone())
         self.service.register("phone", "Black phone", "BLACK", "123", [self.photo])
 
-    def test_lightglue_artifacts_are_served_as_png_and_no_heatmap(self):
+    def test_lightglue_normalized_and_diagnostic_artifacts_are_served(self):
         result = self.service.verify(self.photo)
         self.assertTrue(result["background_removed"])
         self.assertEqual(result["normalization_alignment"], "matched_geometry")
-        self.assertIsNone(result["heatmap_image_url"])
+        self.assertTrue(result["heatmap_image_url"])
         self.assertEqual(result["discrepancy_regions"], [])
         app = create_app(self.settings, self.service)
-        for key in ("capture_image_url", "normalized_reference_image_url", "normalized_image_url", "discrepancy_image_url"):
+        for key in (
+            "capture_image_url",
+            "normalized_reference_image_url",
+            "normalized_image_url",
+            "discrepancy_image_url",
+        ):
             with self.subTest(key=key):
                 response, body = asyncio.run(get(app, result[key]))
                 self.assertEqual(response["status"], 200)
                 self.assertIn((b"content-type", b"image/png"), response["headers"])
                 Image.open(io.BytesIO(body)).verify()
-        self.assertEqual(asyncio.run(get(app, f'/v1/results/{result["request_id"]}/result.json'))[0]["status"], 404)
+        self.assertEqual(
+            asyncio.run(get(app, f"/v1/results/{result['request_id']}/result.json"))[0]["status"],
+            404,
+        )
 
-    def test_sift_does_not_produce_discrepancy_image(self):
-        match = LocalMatch("SIFT+RANSAC", 100, 90, .9, .8, .95, np.eye(3))
+    def test_sift_preserves_normalized_images(self):
+        match = LocalMatch("SIFT+RANSAC", 100, 90, 0.9, 0.8, 0.95, np.eye(3))
         with patch("backend.service.sift_match", return_value=match):
             result = self.service.verify(self.photo, local_backend="sift")
-        self.assertIsNone(result["discrepancy_image_url"])
+        self.assertTrue(result["discrepancy_image_url"])
         self.assertEqual(result["discrepancy_regions"], [])
         self.assertTrue(result["normalized_image_url"])
 
@@ -111,7 +136,8 @@ class NormalizedResultsTests(unittest.TestCase):
         self.models.valid = False
         result = self.service.verify(self.photo)
         self.assertEqual(result["normalization_alignment"], "orientation_only")
-        self.assertIsNone(result["discrepancy_image_url"])
+        self.assertTrue(result["score_is_informational"])
+        self.assertFalse(result["discrepancy_regions"])
 
     def test_reference_replacement_keeps_product_and_invalidates_index(self):
         self.service.verify(self.photo)
@@ -130,6 +156,7 @@ class NormalizedResultsTests(unittest.TestCase):
     def test_reference_replacement_api_is_authenticated(self):
         import json
         from dataclasses import replace
+
         from backend.enroll_iphone15 import multipart
 
         boundary, body = multipart([self.photo])

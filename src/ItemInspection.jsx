@@ -1,305 +1,631 @@
 import { useEffect, useRef, useState } from 'react'
-import { artifactUrl, scanRequest } from './scanApi.js'
+import shippedReference from './assets/figma/inspection/4036d.png'
+import returnedItem from './assets/figma/inspection/97c93.png'
+import shieldCircle from './assets/figma/inspection/57345.svg'
+import shieldCheck from './assets/figma/inspection/702ae.svg'
+import continueArrow from './assets/figma/inspection/d859a.svg'
+import {
+  apiUrl,
+  attachVerification,
+  getReturn,
+  recordWeight,
+  uploadReturnImage,
+  verifyPhoto,
+} from './api.js'
+import { evidenceSignals, latest, recommendation, visualMatchPercent } from './returnRecords.js'
+import { RETURN_STATUS } from './returnLifecycle.js'
 import './ItemInspection.css'
-import './OrderScan.css'
+import './ReviewDecision.css'
 
-const stages = [
-  ['ready', 'Ready'],
-  ['scanning', 'Scanning'],
-  ['complete', 'Complete'],
+const checks = [
+  {
+    title: 'Weight consistency',
+    detail: '99% match to shipped measurement',
+    state: 'match',
+  },
+  {
+    title: 'Product geometry',
+    detail: 'Housing and battery proportions align',
+    state: 'match',
+  },
+  {
+    title: 'Visual similarity',
+    detail: 'Different angle limits confidence',
+    state: 'review',
+  },
+  {
+    title: 'Serial / markings',
+    detail: 'Capture battery-bay label to complete check',
+    state: 'pending',
+  },
 ]
 
-function formatWeight(grams) {
-  if (!Number.isFinite(grams)) return 'Not available'
-  return `${(grams / 1000).toFixed(3)} kg`
+const decisions = [
+  {
+    id: 'approve',
+    title: 'Approve return',
+    description: 'Issue the refund and close the case.',
+    badge: 'Refund',
+  },
+  {
+    id: 'secondary',
+    title: 'Request secondary review',
+    description: 'Route unresolved evidence to another reviewer.',
+    badge: 'Selected',
+  },
+  {
+    id: 'fraud',
+    title: 'Flag suspected fraud',
+    description: 'Hold the refund and send the case to investigation.',
+    badge: 'Hold',
+  },
+]
+
+function StackedAsset({ className = '', children }) {
+  return <span className={`inspection-asset ${className}`}>{children}</span>
 }
 
-function decisionLabel(decision) {
-  if (decision === 'consistent') return 'Match found'
-  if (decision === 'suspicious') return 'Review needed'
-  if (decision) return 'Inconclusive'
-  return 'Waiting'
+function stopStream(stream) {
+  stream?.getTracks().forEach((track) => track.stop())
 }
 
-function CameraEmptyState({ pending, failed }) {
-  return (
-    <div className={`desktop-camera-empty${pending ? ' scanning' : ''}`}>
-      <span className="desktop-camera-icon" aria-hidden="true"><i /></span>
-      <strong>{failed ? 'Scan needs attention' : pending ? 'Scanning item…' : 'Place item in camera view'}</strong>
-      <p>{failed ? 'Check the message below, then try again.' : pending ? 'Keep the item still while the camera captures it.' : 'Keep the full product visible inside the guide.'}</p>
-      <span className="desktop-camera-guide" aria-hidden="true" />
-    </div>
-  )
+const formatKg = (grams, signed = false) => {
+  const kg = grams / 1000
+  return `${signed && kg > 0 ? '+' : ''}${kg.toFixed(2)} kg`
 }
 
-function ScanProgress({ activeStage }) {
-  const activeIndex = stages.findIndex(([stage]) => stage === activeStage)
-  return (
-    <ol className="desktop-scan-progress" aria-label="Inspection status">
-      {stages.map(([stage, label], index) => {
-        const finished = index < activeIndex || activeStage === 'complete'
-        return (
-          <li className={`${index === activeIndex ? 'active' : ''}${finished ? ' finished' : ''}`} key={stage}>
-            <span aria-hidden="true">{finished ? '✓' : index + 1}</span>
-            <strong>{label}</strong>
-          </li>
-        )
-      })}
-    </ol>
-  )
-}
-
-export default function ItemInspection({ onBack, onContinue, scan, onScanChange }) {
+function ItemInspection({ returnCase, onServerUpdate, onBack, onSubmitDecision, reviewerName }) {
+  const saved = Boolean(returnCase.saved)
+  const [photoCount, setPhotoCount] = useState(2)
+  const [weight, setWeight] = useState('1.61')
+  const [weightInput, setWeightInput] = useState('')
+  const [savingWeight, setSavingWeight] = useState(false)
+  const [savingPhoto, setSavingPhoto] = useState(false)
+  const [aiStatus, setAiStatus] = useState('')
+  const [aiRunning, setAiRunning] = useState(false)
+  const [feedback, setFeedback] = useState('')
+  const [photoMode, setPhotoMode] = useState(null)
+  const [cameraError, setCameraError] = useState('')
+  const [returnedPreview, setReturnedPreview] = useState(returnedItem)
+  const [addedPhotos, setAddedPhotos] = useState([])
+  const [decision, setDecision] = useState(returnCase.decision?.type || 'secondary')
+  const [reason, setReason] = useState(returnCase.decision?.reason || 'Missing serial / identity evidence')
+  const [decisionNote, setDecisionNote] = useState(returnCase.decision?.note || '')
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [orderNumber, setOrderNumber] = useState('')
-  const [orderError, setOrderError] = useState('')
-  const [lookingUp, setLookingUp] = useState(false)
-  const dialogRef = useRef(null)
-  const orderInputRef = useRef(null)
-  const lookupRef = useRef(null)
-  const scanId = scan?.scan_id
-  const pending = scan?.status === 'queued' || scan?.status === 'processing'
-  const busy = submitting || pending
-  const complete = scan?.status === 'complete'
-  const failed = Boolean(error || scan?.error || scan?.status === 'error')
-  const stage = busy ? 'scanning' : complete ? 'complete' : 'ready'
-  const resultEntry = scan?.results?.find((entry) => entry.result) || scan?.results?.[0]
-  const verification = resultEntry?.result
-  const cameraImagePath = verification?.annotated_image_url
-    || verification?.original_image_url
-    || verification?.normalized_image_url
-  const cameraImage = artifactUrl(cameraImagePath)
-  const referenceImagePath = verification?.annotated_reference_image_url
-    || verification?.reference_image_url
-    || verification?.normalized_reference_image_url
-  const referenceImage = artifactUrl(referenceImagePath)
-  const visualDecision = verification?.decision
-  const photoCount = scan?.results?.length || 0
+  const fileInputRef = useRef(null)
+  const videoRef = useRef(null)
+  const streamRef = useRef(null)
+  const addedPhotosRef = useRef([])
+
+  function closePhotoTools() {
+    setPhotoMode(null)
+    setCameraError('')
+  }
 
   useEffect(() => {
-    const dialog = dialogRef.current
-    if (dialogOpen) {
-      dialog.showModal()
-      orderInputRef.current?.focus()
+    addedPhotosRef.current = addedPhotos
+  }, [addedPhotos])
+
+  useEffect(() => {
+    return () => {
+      stopStream(streamRef.current)
+      addedPhotosRef.current.forEach((url) => URL.revokeObjectURL(url))
     }
-    else dialog.close()
-    return () => { if (dialog.open) dialog.close() }
-  }, [dialogOpen])
-
-  useEffect(() => () => lookupRef.current?.abort(), [])
-
-  function openOrderDialog() {
-    setOrderNumber(scan?.order?.order_number || '')
-    setOrderError('')
-    setDialogOpen(true)
-  }
-
-  function closeOrderDialog() {
-    if (submitting) return
-    lookupRef.current?.abort()
-    setLookingUp(false)
-    setDialogOpen(false)
-  }
-
-  function changeOrderNumber(value) {
-    lookupRef.current?.abort()
-    setLookingUp(false)
-    setOrderError('')
-    setOrderNumber(value)
-  }
-
-  function enterKeypadDigit(digit) {
-    changeOrderNumber(`${orderNumber}${digit}`.slice(0, 64))
-    orderInputRef.current?.focus()
-  }
-
-  function removeKeypadDigit() {
-    changeOrderNumber(orderNumber.slice(0, -1))
-    orderInputRef.current?.focus()
-  }
+  }, [])
 
   useEffect(() => {
-    if (!pending || !scanId) return undefined
-    const controller = new AbortController()
-    let timer
-    async function poll() {
+    if (!photoMode) return undefined
+
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') closePhotoTools()
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [photoMode])
+
+  useEffect(() => {
+    if (photoMode !== 'camera') return undefined
+
+    let cancelled = false
+    const videoElement = videoRef.current
+
+    const startCamera = async () => {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setCameraError('Camera is not supported in this browser. Upload a file instead.')
+        return
+      }
+
       try {
-        const next = await scanRequest(`/v1/cameras/scans/${scanId}`, { signal: controller.signal })
-        if (controller.signal.aborted) return
-        setError('')
-        onScanChange(next)
-        if (next.status === 'complete' || next.status === 'error') return
-      } catch (err) {
-        if (controller.signal.aborted) return
-        setError(`Cannot check scan: ${err.message}`)
-        // A restart evicts jobs; allow a fresh scan instead of polling forever.
-        if (err.message.includes('Scan not found')) {
-          onScanChange({ scan_id: scanId, status: 'error', error: 'Scan expired. Start a new scan.' })
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false,
+        })
+
+        if (cancelled) {
+          stopStream(stream)
           return
         }
-      }
-      timer = setTimeout(poll, 1000)
-    }
-    poll()
-    return () => { controller.abort(); clearTimeout(timer) }
-  }, [pending, scanId, onScanChange])
 
-  async function startScan(event) {
-    event.preventDefault()
-    const number = orderNumber.trim()
-    if (!number || submitting) return
-    const controller = new AbortController()
-    lookupRef.current = controller
-    setSubmitting(true)
-    setLookingUp(true)
-    setError('')
-    setOrderError('')
-    try {
-      const order = await scanRequest(`/v1/orders/${encodeURIComponent(number)}`, { signal: controller.signal })
-      if (controller.signal.aborted) return
-      if (!order.reference_count) throw new Error('No reference photos are enrolled for this item. Add references before scanning.')
-      setLookingUp(false)
-      const next = await scanRequest('/v1/cameras/scan', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order_number: order.order_number }),
-      })
-      onScanChange(next)
-      setDialogOpen(false)
-    } catch (err) {
-      if (!controller.signal.aborted) setOrderError(err.message)
-    } finally {
-      setSubmitting(false)
-      setLookingUp(false)
+        streamRef.current = stream
+        if (videoElement) {
+          videoElement.srcObject = stream
+          await videoElement.play()
+        }
+      } catch {
+        if (!cancelled) {
+          setCameraError('Camera access was denied or is unavailable. You can still upload a file.')
+        }
+      }
     }
+
+    startCamera()
+
+    return () => {
+      cancelled = true
+      stopStream(streamRef.current)
+      streamRef.current = null
+      if (videoElement) videoElement.srcObject = null
+    }
+  }, [photoMode])
+
+  const attachPhoto = (file) => {
+    if (!file || !file.type.startsWith('image/')) {
+      setFeedback('Choose an image file to add to the evidence package.')
+      return
+    }
+
+    const url = URL.createObjectURL(file)
+    setAddedPhotos((photos) => [...photos, url])
+    setReturnedPreview(url)
+    setPhotoCount((count) => Math.min(count + 1, 4))
+    closePhotoTools()
+
+    if (!saved) {
+      setFeedback(`${file.name || 'Photo'} added to the evidence package (demo, not saved).`)
+      return
+    }
+    savePhoto(file)
+  }
+
+  // Saves the photo to this return, then compares it with the product's
+  // reference photos when the product is enrolled for AI.
+  const savePhoto = async (file) => {
+    setSavingPhoto(true)
+    setFeedback('Saving photo…')
+    try {
+      await uploadReturnImage(returnCase.id, file, 'label')
+      onServerUpdate(await getReturn(returnCase.id))
+      setFeedback(`Photo saved to ${returnCase.id}.`)
+    } catch (error) {
+      setFeedback(`Photo not saved: ${error.message}`)
+      setSavingPhoto(false)
+      return
+    }
+
+    if (!returnCase.productId) {
+      setSavingPhoto(false)
+      return
+    }
+    setAiStatus('Running the AI visual comparison… The first run after the server starts can take a minute.')
+    setAiRunning(true)
+    try {
+      const result = await verifyPhoto(file, returnCase.productId)
+      await attachVerification(returnCase.id, result.request_id)
+      onServerUpdate(await getReturn(returnCase.id))
+      setAiStatus('')
+    } catch (error) {
+      setAiStatus(
+        error.status === 404 || error.status === 409
+          ? 'AI comparison skipped: this product has no reference photos enrolled yet.'
+          : `AI comparison unavailable: ${error.message}`,
+      )
+    } finally {
+      setAiRunning(false)
+      setSavingPhoto(false)
+    }
+  }
+
+  const submitWeight = async (event) => {
+    event.preventDefault()
+    const kg = Number.parseFloat(weightInput)
+    if (!Number.isFinite(kg) || kg <= 0) {
+      setFeedback('Enter the scale reading in kilograms, for example 1.61.')
+      return
+    }
+    setSavingWeight(true)
+    if (!saved) {
+      setWeight(kg.toFixed(2))
+      setWeightInput('')
+      setFeedback(`Weight entered manually: ${kg.toFixed(2)} kg (demo, not saved).`)
+      setSavingWeight(false)
+      return
+    }
+    try {
+      const check = await recordWeight(returnCase.id, Math.round(kg * 1000 * 10) / 10)
+      onServerUpdate(await getReturn(returnCase.id))
+      setWeightInput('')
+      setFeedback(
+        check.within_tolerance
+          ? `Weight saved: ${formatKg(check.measured_weight_g)} is within tolerance.`
+          : `Weight saved: ${formatKg(check.measured_weight_g)} is outside tolerance (${formatKg(check.difference_g, true)}).`,
+      )
+    } catch (error) {
+      setFeedback(`Weight not saved: ${error.message}`)
+    } finally {
+      setSavingWeight(false)
+    }
+  }
+
+  const onFileSelected = (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    attachPhoto(file)
+  }
+
+  const capturePhoto = () => {
+    const video = videoRef.current
+    if (!video || !video.videoWidth) {
+      setFeedback('Wait for the camera preview, then capture.')
+      return
+    }
+
+    const canvas = document.createElement('canvas')
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    canvas.getContext('2d').drawImage(video, 0, 0)
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        setFeedback('Could not capture that frame. Try again or upload a file.')
+        return
+      }
+      attachPhoto(new File([blob], `serial-plate-${Date.now()}.jpg`, { type: 'image/jpeg' }))
+    }, 'image/jpeg', 0.92)
+  }
+
+  // Saved returns show real evidence from the server; the demo keeps its sample data.
+  const checkRows = saved ? evidenceSignals(returnCase) : checks
+  const lastWeight = saved ? latest(returnCase.weightChecks) : null
+  const referenceImage = saved ? apiUrl(returnCase.orderImages[0]?.url) : shippedReference
+  const returnedImage = addedPhotos.length || !saved
+    ? returnedPreview
+    : apiUrl(latest(returnCase.returnImages)?.url)
+  const imageCount = saved
+    ? returnCase.orderImages.length + returnCase.returnImages.length
+    : photoCount
+  const isComplete = returnCase.status === RETURN_STATUS.COMPLETED
+  const expectedWeight = saved ? returnCase.expectedWeightKg : 1.62
+  const measuredWeight = saved
+    ? (lastWeight ? lastWeight.measured_weight_g / 1000 : null)
+    : Number.parseFloat(weight)
+  const hasPhotoEvidence = saved
+    ? Boolean(returnCase.returnImages.length)
+    : Boolean(returnedImage)
+  const hasWeightEvidence = Number.isFinite(measuredWeight) && measuredWeight > 0
+  const analysisComplete = hasPhotoEvidence && hasWeightEvidence && !savingPhoto && !aiRunning
+  const verification = saved ? latest(returnCase.verifications) : null
+  const confidence = saved ? visualMatchPercent(verification) : 91
+  const refund = returnCase.refundAmount
+  const weightDifference = measuredWeight !== null && expectedWeight
+    ? measuredWeight - expectedWeight
+    : null
+
+  const describeDecision = (option) => (
+    option.id === 'approve' && refund !== null && refund !== undefined
+      ? `Issue the $${refund.toFixed(2)} refund and close the case.`
+      : option.description
+  )
+
+  const submitDecision = async (event) => {
+    event.preventDefault()
+    if (submitting || isComplete) return
+    if (!analysisComplete) {
+      setFeedback('Add a return photo and measured weight, then wait for the analysis to finish.')
+      return
+    }
+    if (decision !== 'approve' && !decisionNote.trim()) {
+      setFeedback('Add a decision note explaining what the next reviewer should verify.')
+      return
+    }
+
+    const title = decisions.find((option) => option.id === decision)?.title
+    setSubmitting(true)
+    setFeedback(saved ? 'Saving the final decision…' : '')
+    const error = await onSubmitDecision({
+      type: decision,
+      title,
+      reason: decision === 'approve' ? '' : reason,
+      note: decisionNote,
+    })
+    setSubmitting(false)
+    setFeedback(error || `${title} recorded for ${returnCase.id}.`)
   }
 
   return (
     <>
-      <main id="main" className="inspection-page desktop-inspection-page">
-        <section className="desktop-inspection-heading">
-          <div><h1>Identify &amp; inspect item</h1><p>Place the item in view, then enter the order number to begin.</p></div>
-          {onBack ? <button type="button" className="desktop-back-button" onClick={onBack} disabled={busy}>‹ Back</button> : null}
+      <main id="main" className="inspection-page combined-page">
+        <section className="inspection-intro combined-intro" aria-labelledby="inspection-title">
+          <div>
+            <h1 id="inspection-title">Inspect &amp; decide</h1>
+            <p>Upload the return photos and enter the measured weight, then review the analysis before recording your decision.</p>
+          </div>
+          <div className="inspection-case">
+            <div>
+              <span>Return case</span>
+              <strong>{returnCase.id}</strong>
+              <small>{returnCase.productName} / {returnCase.productModel}</small>
+            </div>
+            <span className={`needs-review${isComplete ? ' completed' : ''}`}>
+              <i />{isComplete ? 'Completed' : 'Needs review'}
+            </span>
+          </div>
         </section>
 
-        <section className="desktop-inspection-layout" aria-label="Item inspection" aria-busy={busy}>
-          <article className="desktop-camera-card">
-            <header>
-              <div><span>Camera</span><h2>Item view</h2></div>
-              <strong className={`desktop-state-pill ${stage}`} role="status" aria-live="polite">{stage === 'scanning' ? 'Scanning' : stage === 'complete' ? 'Complete' : 'Ready'}</strong>
-            </header>
-            <div className={`desktop-camera-view${cameraImage && referenceImage ? ' comparison' : ''}`}>
-              {cameraImage && referenceImage ? (
-                <div className="desktop-camera-comparison">
-                  <figure>
-                    <a href={referenceImage} target="_blank" rel="noreferrer" aria-label="Open enrolled reference image">
-                      <img src={referenceImage} alt="Enrolled product reference" />
-                    </a>
-                    <figcaption className="reference">Reference</figcaption>
-                  </figure>
-                  <figure>
-                    <a href={cameraImage} target="_blank" rel="noreferrer" aria-label="Open captured item image">
-                      <img src={cameraImage} alt="Captured returned item" />
-                    </a>
-                    <figcaption>Captured</figcaption>
-                  </figure>
-                </div>
-              ) : cameraImage ? (
-                <a href={cameraImage} target="_blank" rel="noreferrer" aria-label="Open captured item image">
-                  <img src={cameraImage} alt="Captured returned item" />
-                  <span>Captured item</span>
-                </a>
-              ) : <CameraEmptyState pending={busy} failed={failed} />}
+        <div className="combined-dashboard">
+          <section className="combined-evidence-card" aria-labelledby="comparison-title">
+            <div className="combined-card-heading">
+              <div>
+                <h2 id="comparison-title">Item evidence</h2>
+                <p>Reference and returned-item photos</p>
+              </div>
+              <span>Manual inputs</span>
             </div>
-            <p>Keep the full item visible and remove other objects from the camera area.</p>
-          </article>
 
-          <aside className="desktop-scan-card">
-            <header>
-              <span>Inspection</span>
-              <h2>{complete ? 'Inspection complete' : busy ? 'Analyzing item' : 'Ready to scan'}</h2>
-              <p>{complete ? 'Review the results, then continue to the final decision.' : busy ? 'The capture is being compared with the product reference.' : 'Start with the order number so the correct reference is loaded.'}</p>
-            </header>
+            <div className="comparison-images combined-images">
+              <figure>
+                {referenceImage ? (
+                  <img src={referenceImage} alt={`Original photo of ${returnCase.productName} before shipping`} />
+                ) : (
+                  <p className="comparison-empty">No original photo on file for this order item.</p>
+                )}
+                <figcaption className="image-label reference-label"><i />Shipped reference</figcaption>
+                {saved ? (
+                  returnCase.orderImages.length ? <span className="image-count">01 / {String(returnCase.orderImages.length).padStart(2, '0')}</span> : null
+                ) : <span className="image-count">01 / 04</span>}
+              </figure>
+              <figure>
+                {returnedImage ? (
+                  <img src={returnedImage} alt={`Photo of the returned ${returnCase.productName}`} />
+                ) : (
+                  <p className="comparison-empty">No photo yet. Use Add photo to capture the returned item.</p>
+                )}
+                <figcaption className="image-label returned-label"><i />Returned item</figcaption>
+                <span className="image-count live-count">
+                  {!saved || addedPhotos.length || returnCase.returnImages.length ? 'Uploaded' : 'Needed'}
+                </span>
+              </figure>
+            </div>
 
-            <section className={`desktop-order-summary${scan?.order ? ' loaded' : ''}`} aria-label="Order summary">
-              <div className="desktop-order-heading"><span>Order details</span>{scan?.order && <strong>Loaded</strong>}</div>
-              {scan?.order ? (
-                <>
-                  <h3>{scan.order.product_name}</h3>
-                  <dl>
-                    <div><dt>Order</dt><dd>{scan.order.order_number}</dd></div>
-                    <div><dt>SKU</dt><dd>{scan.order.sku || '—'}</dd></div>
-                    <div><dt>Expected</dt><dd>{formatWeight(scan.weight?.expected_weight_g ?? scan.order.expected_weight_g)}</dd></div>
-                  </dl>
-                </>
-              ) : (
-                <div className="desktop-order-empty"><span aria-hidden="true">#</span><p>No order selected yet.</p></div>
-              )}
+            <div className="combined-photo-tools">
+              <div>
+                <strong>✓ {imageCount} photo{imageCount === 1 ? '' : 's'} available</strong>
+                <span>{saved ? 'Photos are saved to this return.' : 'Use the camera or upload files while hardware is disconnected.'}</span>
+              </div>
+              <div>
+                <button type="button" onClick={() => setPhotoMode('choose')}>Replace photo</button>
+                <button type="button" onClick={() => setPhotoMode('choose')}>Add angle</button>
+              </div>
+            </div>
+
+            <section className="combined-weight-card" aria-labelledby="weight-title">
+              <div className="combined-weight-heading">
+                <div>
+                  <h3 id="weight-title">Weight</h3>
+                  <span>Entered manually</span>
+                </div>
+                <dl>
+                  <div><dt>Expected</dt><dd>{expectedWeight ? `${expectedWeight.toFixed(2)} kg` : 'Not on file'}</dd></div>
+                  <div><dt>Measured</dt><dd>{measuredWeight ? `${measuredWeight.toFixed(2)} kg` : '—'}</dd></div>
+                  <div><dt>Delta</dt><dd>{weightDifference === null ? '—' : `${weightDifference >= 0 ? '+' : ''}${weightDifference.toFixed(2)} kg`}</dd></div>
+                </dl>
+              </div>
+              <form className="combined-weight-entry" onSubmit={submitWeight}>
+                <label>
+                  <span className="sr-only">Scale reading in kilograms</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.001"
+                    min="0"
+                    placeholder={expectedWeight ? 'Enter measured weight in kg' : 'No expected weight on file'}
+                    value={weightInput}
+                    onChange={(event) => setWeightInput(event.target.value)}
+                    disabled={!expectedWeight || savingWeight || isComplete}
+                  />
+                </label>
+                <button type="submit" disabled={!expectedWeight || savingWeight || !weightInput || isComplete}>
+                  {savingWeight ? 'Saving…' : 'Use this weight'}
+                </button>
+              </form>
             </section>
 
-            <button type="button" className="desktop-scan-button" disabled={busy} onClick={openOrderDialog}>
-              <span aria-hidden="true">{complete ? '↻' : '⌁'}</span>
-              {busy ? 'Scanning item…' : complete ? 'Scan again' : 'Scan item'}
-            </button>
-            <small>You’ll enter the order number before the scan begins.</small>
-            <ScanProgress activeStage={stage} />
-          </aside>
+            {aiStatus ? <p className="ai-status combined-ai-status" role="status">{aiStatus}</p> : null}
 
-          <section className={`desktop-analysis-card ${stage}`} aria-labelledby="analysis-heading">
-            <div className="desktop-analysis-heading">
-              <span>Analysis results</span>
-              <h2 id="analysis-heading">{complete ? decisionLabel(scan?.decision || visualDecision) : busy ? 'Analysis in progress' : 'Waiting to scan'}</h2>
-              {complete && Number.isFinite(verification?.confidence_percent) && <strong>{verification.confidence_percent.toFixed(1)}% confidence</strong>}
-            </div>
-            <div className="desktop-analysis-checks">
-              <div className={complete && scan?.weight ? (scan.weight.within_tolerance ? 'pass' : 'review') : ''}>
-                <span aria-hidden="true">{complete && scan?.weight ? (scan.weight.within_tolerance ? '✓' : '!') : '—'}</span>
-                <p><strong>Weight</strong><small>{complete && scan?.weight ? `${formatWeight(scan.weight.measured_weight_g)} · ${scan.weight.within_tolerance ? 'Within tolerance' : 'Outside tolerance'}` : 'Waiting for scan'}</small></p>
+            <section className={`combined-analysis${analysisComplete ? ' complete' : ''}`} aria-live="polite">
+              <StackedAsset className="combined-analysis-icon">
+                <img src={shieldCircle} alt="" />
+                <img src={shieldCheck} alt="" />
+              </StackedAsset>
+              <div>
+                <span>{analysisComplete ? 'Analysis complete' : 'Waiting for evidence'}</span>
+                <h3>{analysisComplete ? (saved ? recommendation(checkRows).title : 'Likely the same product') : 'Add a photo and measured weight'}</h3>
+                <p>{analysisComplete ? 'Photos and weight are consistent. The final decision still requires a reviewer.' : 'Decision controls will unlock after both evidence inputs are available.'}</p>
+                <div className="combined-signal-list">
+                  {checkRows.map((check) => (
+                    <b className={check.state} key={check.key || check.title}>
+                      {check.state === 'match' ? '✓' : check.state === 'review' ? '!' : '·'} {check.title}
+                    </b>
+                  ))}
+                </div>
               </div>
-              <div className={complete && visualDecision ? (visualDecision === 'consistent' ? 'pass' : 'review') : ''}>
-                <span aria-hidden="true">{complete && visualDecision ? (visualDecision === 'consistent' ? '✓' : '!') : '—'}</span>
-                <p><strong>Visual match</strong><small>{complete && visualDecision ? decisionLabel(visualDecision) : 'Waiting for scan'}</small></p>
+              <div className="combined-confidence">
+                <strong>{analysisComplete && confidence !== null ? `${confidence}%` : '—'}</strong>
+                <span>Match confidence</span>
               </div>
-              <div className={complete && photoCount ? 'pass' : ''}>
-                <span aria-hidden="true">{complete && photoCount ? '✓' : '—'}</span>
-                <p><strong>Camera capture</strong><small>{complete && photoCount ? `${photoCount} view${photoCount === 1 ? '' : 's'} saved` : 'Waiting for scan'}</small></p>
-              </div>
-            </div>
-            {(error || scan?.error) && <p className="scan-error desktop-inline-error" role="alert">{error || scan.error}</p>}
+            </section>
           </section>
-        </section>
+
+          <form id="combined-decision-form" className="decision-card combined-decision-card" onSubmit={submitDecision}>
+            <div className="combined-decision-heading">
+              <div><h2>Final decision</h2><p>The reviewer makes the final call. AI results are advisory.</p></div>
+              <span className={analysisComplete ? 'ready' : ''}>{analysisComplete ? 'Analysis complete' : 'Waiting for analysis'}</span>
+            </div>
+
+            <div className="advisory-note">
+              <span>i</span>
+              <div>
+                <strong>{analysisComplete ? 'Decision controls are ready.' : 'Decision controls unlock after analysis.'}</strong>
+                <small>{analysisComplete ? 'Review the evidence and choose an outcome.' : 'Add the required photo and weight first.'}</small>
+              </div>
+            </div>
+
+            <fieldset disabled={!analysisComplete || isComplete}>
+              <legend className="sr-only">Final decision</legend>
+              {decisions.map((option) => (
+                <label className={`decision-option ${decision === option.id ? 'selected' : ''} ${option.id}`} key={option.id}>
+                  <input
+                    type="radio"
+                    name="decision"
+                    value={option.id}
+                    checked={decision === option.id}
+                    onChange={() => setDecision(option.id)}
+                  />
+                  <span className="decision-radio"><i /></span>
+                  <span><strong>{option.title}</strong><small>{describeDecision(option)}</small></span>
+                  <b>{decision === option.id && option.id === 'secondary' ? 'Selected' : option.badge}</b>
+                </label>
+              ))}
+            </fieldset>
+
+            {decision !== 'approve' ? (
+              <label className="decision-field">
+                <span>Reason for escalation</span>
+                <select value={reason} onChange={(event) => setReason(event.target.value)} disabled={!analysisComplete || isComplete}>
+                  <option>Missing serial / identity evidence</option>
+                  <option>Visual evidence is inconclusive</option>
+                  <option>Weight measurement is inconsistent</option>
+                  <option>Suspected item substitution</option>
+                </select>
+              </label>
+            ) : null}
+
+            <label className="decision-field decision-note">
+              <span>Decision note</span>
+              <textarea
+                value={decisionNote}
+                onChange={(event) => setDecisionNote(event.target.value)}
+                placeholder="Explain what the next reviewer should verify..."
+                disabled={!analysisComplete || isComplete}
+              />
+              <small>{decision === 'approve' ? 'Optional for approvals' : 'Required for escalations and fraud flags'}</small>
+            </label>
+
+            <span className="audit-note">Reviewer: {reviewerName} / Every decision is recorded in the audit log.</span>
+          </form>
+        </div>
       </main>
-      <footer className="inspection-footer desktop-inspection-footer">
-        <div><strong>{complete ? 'Inspection complete' : 'Scan required before review'}</strong><span>{complete ? 'The final decision remains with the reviewer.' : 'Complete the camera scan to continue.'}</span></div>
+
+      <footer className="inspection-footer">
         <div>
-          {onBack ? <button type="button" className="desktop-footer-back" onClick={onBack} disabled={busy}>Back</button> : null}
-          <button type="button" className="desktop-footer-continue" onClick={onContinue} disabled={busy || !complete}>Continue to review <span aria-hidden="true">›</span></button>
+          <strong>{isComplete ? 'Decision recorded' : analysisComplete ? 'Analysis complete — reviewer decision required' : 'Evidence required before a decision'}</strong>
+          <span aria-live="polite">
+            {feedback || (analysisComplete
+              ? 'Review the AI result, choose an outcome, and add a note when escalation is needed.'
+              : 'Upload the returned-item photo and enter the measured weight to continue.')}
+          </span>
+        </div>
+        <div className="inspection-actions">
+          <button type="button" className="back-button" onClick={onBack}>‹&nbsp; Back</button>
+          <button
+            type="button"
+            className="save-button"
+            onClick={() => setFeedback(saved
+              ? `Photos and weights are already saved to ${returnCase.id}.`
+              : 'Progress is kept for this browser session.')}
+          >
+            Save for later
+          </button>
+          <button
+            type="submit"
+            form="combined-decision-form"
+            className="submit-review-button"
+            disabled={!analysisComplete || isComplete || submitting}
+          >
+            {isComplete ? 'Decision recorded' : submitting ? 'Saving…' : 'Submit decision'}
+            <img src={continueArrow} alt="" />
+          </button>
         </div>
       </footer>
-      <dialog className="scan-order-dialog" ref={dialogRef} aria-labelledby="scan-order-title" onCancel={(event) => { event.preventDefault(); closeOrderDialog() }}>
-        <div className="scan-order-heading">
-          <div><span>Start inspection</span><h2 id="scan-order-title">Enter order number</h2><p>The scan starts automatically after the order is confirmed.</p></div>
-          <button type="button" className="scan-order-close" aria-label="Close order entry" disabled={submitting} onClick={closeOrderDialog}>×</button>
+
+      {photoMode ? (
+        <div
+          className="camera-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="camera-title"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) closePhotoTools()
+          }}
+        >
+          <div className="camera-sheet">
+            <div className="camera-sheet-header">
+              <div>
+                <h2 id="camera-title">
+                  {photoMode === 'camera' ? 'Capture serial-plate photo' : 'Add inspection photo'}
+                </h2>
+                <p>
+                  {photoMode === 'camera'
+                    ? 'Hold the camera steady so the markings are readable.'
+                    : 'Take a live photo or upload an image of the serial plate.'}
+                </p>
+              </div>
+              <button type="button" className="camera-close" onClick={closePhotoTools}>Close</button>
+            </div>
+            {photoMode === 'choose' ? (
+              <div className="photo-source-actions">
+                <button type="button" className="continue-button" onClick={() => setPhotoMode('camera')}>
+                  Take photo
+                </button>
+                <button type="button" className="save-button" onClick={() => fileInputRef.current?.click()}>
+                  Upload file
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="camera-preview">
+                  {cameraError ? (
+                    <p className="camera-error">{cameraError}</p>
+                  ) : (
+                    <video ref={videoRef} autoPlay playsInline muted />
+                  )}
+                </div>
+                <div className="camera-sheet-actions">
+                  <button type="button" className="save-button" onClick={() => fileInputRef.current?.click()}>
+                    Upload file instead
+                  </button>
+                  <button
+                    type="button"
+                    className="continue-button"
+                    onClick={capturePhoto}
+                    disabled={Boolean(cameraError)}
+                  >
+                    Capture photo
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
-        <form onSubmit={startScan} className="scan-order-lookup">
-          <label htmlFor="scan-order-number">Order number</label>
-          <div className="scan-order-input-row">
-            <input ref={orderInputRef} id="scan-order-number" name="order_number" value={orderNumber} onChange={(event) => changeOrderNumber(event.target.value)} placeholder="Enter order number" maxLength={64} disabled={submitting} required />
-            <button type="submit" className="scan-order-submit" disabled={submitting || !orderNumber.trim()}>{lookingUp ? 'Loading order…' : submitting ? 'Starting scan…' : 'Start scan'}</button>
-          </div>
-          <div className="scan-order-keypad" role="group" aria-label="Order number keypad">
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
-              <button type="button" key={digit} disabled={submitting} onClick={() => enterKeypadDigit(digit)}>{digit}</button>
-            ))}
-            <button type="button" className="keypad-action" disabled={submitting || !orderNumber} onClick={() => changeOrderNumber('')}>Clear</button>
-            <button type="button" disabled={submitting} onClick={() => enterKeypadDigit(0)}>0</button>
-            <button type="button" className="keypad-action keypad-delete" aria-label="Delete last digit" disabled={submitting || !orderNumber} onClick={removeKeypadDigit}>⌫</button>
-          </div>
-          <p className="scan-order-help">Use an order with a product reference enrolled in the station database.</p>
-        </form>
-        {orderError && <p className="scan-error" role="alert">{orderError}</p>}
-      </dialog>
+      ) : null}
+      <input
+        ref={fileInputRef}
+        className="sr-only"
+        type="file"
+        accept="image/*"
+        onChange={onFileSelected}
+      />
     </>
   )
 }
+
+export default ItemInspection

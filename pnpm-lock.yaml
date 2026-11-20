@@ -8,9 +8,18 @@ importers:
 
   .:
     dependencies:
+      '@azure/msal-browser':
+        specifier: ^5.25.1
+        version: 5.29.0
       '@fontsource/inter':
         specifier: ^5.3.0
         version: 5.3.0
+      '@zxing/browser':
+        specifier: ^0.2.1
+        version: 0.2.1(@zxing/library@0.23.0)
+      '@zxing/library':
+        specifier: ^0.23.0
+        version: 0.23.0
       react:
         specifier: ^19.2.8
         version: 19.3.0
@@ -47,6 +56,14 @@ importers:
         version: 8.3.4
 
 packages:
+
+  '@azure/msal-browser@5.29.0':
+    resolution: {integrity: sha512-Ko/Ovw6h+Gu33mp8f0FUyddr/KDWzbGzcgR8HKZaT4wgTYljLPKJP1rcDu0RHj7pkd4CR2hCHK51XFzgvq/Q5Q==}
+    engines: {node: '>=0.8.0'}
+
+  '@azure/msal-common@16.16.1':
+    resolution: {integrity: sha512-dSKdL9h/iercb4GumsKFh+wVvLe1ohuDPiviklgnQVHnY2FYNUlbQJ3E1Qd37vkof9CfraK9BQpCW1hoOg0znQ==}
+    engines: {node: '>=0.8.0'}
 
   '@babel/code-frame@7.29.7':
     resolution: {integrity: sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==}
@@ -342,6 +359,18 @@ packages:
         optional: true
       oxc-transform-react:
         optional: true
+
+  '@zxing/browser@0.2.1':
+    resolution: {integrity: sha512-92pVfVDUXbc15xu9vIEmhNyqIEASMEkDF92CwT6T+7sg2EHXJRktH9CQKoQSXe51UtbNsj+Fm09H/JBWHMs/Sw==}
+    peerDependencies:
+      '@zxing/library': ^0.23.0
+
+  '@zxing/library@0.23.0':
+    resolution: {integrity: sha512-6fkkoFwP8CHxl6ugnPsj74PLJgX2iRv5zczGAyt5OBzQgxFhuhF0NCEc4t4OvSr8xAv2MRLlI0Iu9ZGDZQ2urA==}
+    engines: {node: '>= 24.0.0'}
+
+  '@zxing/text-encoding@0.9.0':
+    resolution: {integrity: sha512-U/4aVJ2mxI0aDNI8Uq0wEhMgY+u4CNtEb0om3+y3+niDAsoTCOB33UF0sxpzqzdqXLqmvc+vZyAt4O8pPdfkwA==}
 
   acorn-jsx@5.3.2:
     resolution: {integrity: sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==}
@@ -759,6 +788,10 @@ packages:
     resolution: {integrity: sha512-wXR/dYpcqKmfWpEdZjiKJOwCNFndD0DMnrW/cYjVGttEkBfVgcLFHoNrlj47mjOVic9yyNu65alsgF4NQyTa2g==}
     engines: {node: '>=12.0.0'}
 
+  ts-custom-error@3.3.1:
+    resolution: {integrity: sha512-5OX1tzOjxWEgsr/YEUWSuPrQ00deKLh6D7OTWcvNHm12/7QPyRh8SYpyWvA4IZv8H/+GQWQEh/kwo95Q9OVW1A==}
+    engines: {node: '>=14.0.0'}
+
   type-check@0.4.0:
     resolution: {integrity: sha512-XleUoc9uwGXqjWwXaUTZAmzMcFZ5858QA2vvx1Ur5xIcixXIP+8LnFDgRplU30us6teqdlskFfu+ae4K79Ooew==}
     engines: {node: '>= 0.8.0'}
@@ -841,6 +874,12 @@ packages:
     resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
 snapshots:
+
+  '@azure/msal-browser@5.29.0':
+    dependencies:
+      '@azure/msal-common': 16.16.1
+
+  '@azure/msal-common@16.16.1': {}
 
   '@babel/code-frame@7.29.7':
     dependencies:
@@ -1100,6 +1139,21 @@ snapshots:
     dependencies:
       '@rolldown/pluginutils': 1.0.1
       vite: 8.3.4
+
+  '@zxing/browser@0.2.1(@zxing/library@0.23.0)':
+    dependencies:
+      '@zxing/library': 0.23.0
+    optionalDependencies:
+      '@zxing/text-encoding': 0.9.0
+
+  '@zxing/library@0.23.0':
+    dependencies:
+      ts-custom-error: 3.3.1
+    optionalDependencies:
+      '@zxing/text-encoding': 0.9.0
+
+  '@zxing/text-encoding@0.9.0':
+    optional: true
 
   acorn-jsx@5.3.2(acorn@8.19.0):
     dependencies:
@@ -1478,6 +1532,8 @@ snapshots:
     dependencies:
       fdir: 6.5.0(picomatch@4.0.7)
       picomatch: 4.0.7
+
+  ts-custom-error@3.3.1: {}
 
   type-check@0.4.0:
     dependencies:

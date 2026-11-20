@@ -103,10 +103,15 @@ def test_order_lookup_and_scan_job_use_a_snapshot_not_station_default(tmp_path, 
     app = create_app(Settings(data_dir=tmp_path), service=verifier)
     app.state.camera_monitor = monitor
     with TestClient(app) as client:
-        order = client.get("/v1/orders/1").json()
+        order = client.get("/v1/cameras/orders/1").json()
+        assert client.get("/v1/orders/1").json() == order  # Legacy camera client
+        saved = client.post("/v1/orders", json={"id": "1", "items": [{"product_name": "Bottle"}]})
+        assert saved.status_code == 201
+        assert client.get("/v1/orders/1").json()["items"][0]["product_name"] == "Bottle"
+        assert client.get("/v1/cameras/orders/1").json() == order
         assert order["product_id"] == "iphone-15" and order["reference_count"] == 2
         assert order["expected_weight_g"] == 171
-        assert client.get("/v1/orders/2").status_code == 404
+        assert client.get("/v1/cameras/orders/2").status_code == 404
         assert client.post("/v1/cameras/scan", json={"order_number": "999"}).status_code == 404
         assert not monitor.scans
         assert client.post("/v1/cameras/scan", json={"order_number": ""}).status_code == 422

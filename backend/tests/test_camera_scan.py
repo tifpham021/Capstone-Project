@@ -1,4 +1,5 @@
 """Button capture/API integration tests; no hardware, weights or network needed."""
+
 import asyncio
 import json
 import os
@@ -12,7 +13,6 @@ from unittest.mock import Mock, patch
 
 import cv2
 import numpy as np
-
 from backend.cameras import CameraMonitor
 from backend.config import Settings
 from backend.main import create_app
@@ -33,10 +33,20 @@ async def request(app, method, path, key=None):
     async def send(message):
         messages.append(message)
 
-    scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
-               "method": method, "scheme": "http", "path": path, "raw_path": path.encode(),
-               "query_string": b"", "headers": [(b"x-api-key", key.encode())] if key else [],
-               "client": ("127.0.0.1", 1), "server": ("test", 80), "root_path": ""}
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": method,
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "headers": [(b"x-api-key", key.encode())] if key else [],
+        "client": ("127.0.0.1", 1),
+        "server": ("test", 80),
+        "root_path": "",
+    }
     # Poll the task with a bounded timeout: restricted sandboxes may suppress
     # the loop's cross-thread socket wakeup from synchronous FastAPI handlers.
     task = asyncio.create_task(app(scope, receive, send))
@@ -58,17 +68,25 @@ class CameraScanTests(unittest.TestCase):
             settings = Settings(data_dir=Path(directory), api_key="test-key")
             app = create_app(settings, service=object())
             self.assertEqual(asyncio.run(request(app, "POST", "/v1/cameras/scan"))[0], 401)
-            self.assertEqual(asyncio.run(request(app, "POST", "/v1/cameras/scan", "test-key"))[0], 503)
+            self.assertEqual(
+                asyncio.run(request(app, "POST", "/v1/cameras/scan", "test-key"))[0], 503
+            )
             monitor = CameraMonitor(object())
             monitor._set(status="watching")
             app.state.camera_monitor = monitor
             status, job = asyncio.run(request(app, "POST", "/v1/cameras/scan", "test-key"))
             self.assertEqual(status, 202)
-            self.assertEqual(asyncio.run(request(app, "POST", "/v1/cameras/scan", "test-key"))[0], 409)
-            status, polled = asyncio.run(request(app, "GET", f'/v1/cameras/scans/{job["scan_id"]}', "test-key"))
+            self.assertEqual(
+                asyncio.run(request(app, "POST", "/v1/cameras/scan", "test-key"))[0], 409
+            )
+            status, polled = asyncio.run(
+                request(app, "GET", f"/v1/cameras/scans/{job['scan_id']}", "test-key")
+            )
             self.assertEqual(status, 200)
             self.assertEqual(polled, job)
-            self.assertEqual(asyncio.run(request(app, "GET", "/v1/cameras/scans/missing", "test-key"))[0], 404)
+            self.assertEqual(
+                asyncio.run(request(app, "GET", "/v1/cameras/scans/missing", "test-key"))[0], 404
+            )
 
     def test_fresh_two_camera_capture_and_single_inference(self):
         self.check_camera_capture("0,1", [0, 1])
@@ -82,9 +100,16 @@ class CameraScanTests(unittest.TestCase):
                 self.check_camera_capture("0,1", [1 - unavailable], unavailable=unavailable)
 
     def test_no_available_cameras(self):
-        with patch.dict(os.environ, {"RETURNSCAN_CAMERA_IDS": "0,1"}), patch.dict(
-            'sys.modules', {"picamera2": types.SimpleNamespace(
-                Picamera2=Mock(side_effect=RuntimeError("unavailable")))}
+        with (
+            patch.dict(os.environ, {"RETURNSCAN_CAMERA_IDS": "0,1"}),
+            patch.dict(
+                "sys.modules",
+                {
+                    "picamera2": types.SimpleNamespace(
+                        Picamera2=Mock(side_effect=RuntimeError("unavailable"))
+                    )
+                },
+            ),
         ):
             monitor = CameraMonitor(object())
             with self.assertLogs("backend.cameras", level="WARNING"):
@@ -133,7 +158,18 @@ class CameraScanTests(unittest.TestCase):
                 release.wait(5)
                 return {"request_id": str(len(calls))}
 
-        with patch.dict(os.environ, {"RETURNSCAN_CAMERA_IDS": configured_ids, "RETURNSCAN_CAMERA_AUTO_SCAN": "0", "RETURNSCAN_CAMERA_INTERVAL_SECONDS": "0.02", "RETURNSCAN_CAMERA_ADAPTIVE_ZOOM": "1"}), patch.dict('sys.modules', {"picamera2": types.SimpleNamespace(Picamera2=Camera)}):
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "RETURNSCAN_CAMERA_IDS": configured_ids,
+                    "RETURNSCAN_CAMERA_AUTO_SCAN": "0",
+                    "RETURNSCAN_CAMERA_INTERVAL_SECONDS": "0.02",
+                    "RETURNSCAN_CAMERA_ADAPTIVE_ZOOM": "1",
+                },
+            ),
+            patch.dict("sys.modules", {"picamera2": types.SimpleNamespace(Picamera2=Camera)}),
+        ):
             monitor = CameraMonitor(Verifier())
             monitor.start()
             try:
@@ -147,7 +183,10 @@ class CameraScanTests(unittest.TestCase):
                     monitor.request_scan()
                 self.assertEqual(error.exception.status_code, 409)
                 release.set()
-                while monitor.scan_status(job["scan_id"])["status"] != "complete" and time.monotonic() < deadline:
+                while (
+                    monitor.scan_status(job["scan_id"])["status"] != "complete"
+                    and time.monotonic() < deadline
+                ):
                     time.sleep(0.02)
                 result = monitor.scan_status(job["scan_id"])
                 self.assertEqual(result["status"], "complete")
@@ -159,8 +198,9 @@ class CameraScanTests(unittest.TestCase):
                     self.assertLess(width, 1280)
                     self.assertGreater(height, 120)
                     self.assertLess(height, 960)
-                    self.assertAlmostEqual(image[height // 2, width // 2].mean(),
-                                           40 + 190 * camera_id, delta=2)
+                    self.assertAlmostEqual(
+                        image[height // 2, width // 2].mean(), 40 + 190 * camera_id, delta=2
+                    )
                     self.assertAlmostEqual(image[0, 0].mean(), 150, delta=2)
             finally:
                 release.set()

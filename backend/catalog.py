@@ -18,6 +18,7 @@ IMAGE_ARTIFACTS = {
     "discrepancy.png",
     "capture.png",
     "normalized.png",
+    "normalized-reference.png",
     "annotated.png",
     "reference-annotated.png",
     "heatmap.png",

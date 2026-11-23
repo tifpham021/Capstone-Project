@@ -12,12 +12,13 @@ from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException
 
 from backend.catalog import IMAGE_ARTIFACTS
-from backend.common import ServiceError
+from backend.common import ServiceError, read_upload
 from backend.config import Settings
-from backend.orders import OrderStore, ensure_demo_reference
+from backend.database import create_session_factory
+from backend.orders import CameraOrder, OrderStore, ensure_demo_reference
+from backend.records import create_records_router
 from backend.schemas import BatchResponse, ProductSummary, VerificationResponse
 
-IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
 LocalBackend = Literal["auto", "aliked", "sift"]
 
 
@@ -48,21 +49,7 @@ class BodyLimitMiddleware:
         await self.app(scope, limited_receive, send)
 
 
-async def read_upload(file: UploadFile, settings: Settings) -> bytes:
-    try:
-        if file.content_type not in IMAGE_MIME_TYPES:
-            raise ServiceError("Supported content types: image/jpeg, image/png, image/webp", 415)
-        data = await file.read(settings.max_upload_bytes + 1)
-        if not data:
-            raise ServiceError("Image is empty", 400)
-        if len(data) > settings.max_upload_bytes:
-            raise ServiceError("Image exceeds the upload limit", 413)
-        return data
-    finally:
-        await file.close()
-
-
-def create_app(settings: Settings | None = None, service=None) -> FastAPI:
+def create_app(settings: Settings | None = None, service=None, session_factory=None) -> FastAPI:
     settings = settings or Settings.from_env()
     create_default_service = service is None
     if service is None:
@@ -111,7 +98,7 @@ def create_app(settings: Settings | None = None, service=None) -> FastAPI:
         CORSMiddleware,
         allow_origins=list(settings.cors_origins),
         allow_credentials=False,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "PUT"],
         allow_headers=["Content-Type", "X-API-Key"],
     )
     api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -137,6 +124,7 @@ def create_app(settings: Settings | None = None, service=None) -> FastAPI:
         return {
             "status": "ok",
             "models_loaded": app.state.verifier.loaded,
+            "alignment_method": settings.alignment_method,
             "decision_engine": getattr(service, "engine", "cv"),
             "model": settings.openai_model
             if getattr(service, "engine", "cv") == "luna"
@@ -158,13 +146,13 @@ def create_app(settings: Settings | None = None, service=None) -> FastAPI:
         monitor = getattr(app.state, "camera_monitor", None)
         return monitor.snapshot() if monitor else {"enabled": False, "status": "disabled"}
 
-    @app.get("/v1/orders/{order_number}", dependencies=protected)
-    def get_order(order_number: str):
+    @app.get("/v1/cameras/orders/{order_number}", dependencies=protected)
+    def get_camera_order(order_number: str) -> CameraOrder:
         order = orders.get(order_number)
         product = next(
             (p for p in app.state.verifier.products() if p["id"] == order["product_id"]), None
         )
-        return {**order, "reference_count": product["reference_count"] if product else 0}
+        return CameraOrder(**order, reference_count=product["reference_count"] if product else 0)
 
     @app.post("/v1/cameras/scan", status_code=202, dependencies=protected)
     def scan_cameras(body: Annotated[ScanOrderRequest | None, Body()] = None):
@@ -318,6 +306,15 @@ def create_app(settings: Settings | None = None, service=None) -> FastAPI:
             media_type="image/png",
             headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
         )
+
+    app.include_router(
+        create_records_router(
+            settings,
+            session_factory or create_session_factory(settings),
+            protected,
+            legacy_camera_order=get_camera_order,
+        )
+    )
 
     return app
 

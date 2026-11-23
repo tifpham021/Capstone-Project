@@ -1,13 +1,14 @@
 # Live camera inspection backend
 
-This is the functional **Scan item** workflow on `local-ui-rectangle-alignment`.
+This is the functional **Scan item** workflow on `local-ui-rectangle-alignment-pi-ui`.
 The Pi's one/two-camera capture, stillness gate, job IDs and polling routes are
 preserved. GPT-6 Luna (reasoning off) is now the default decision engine.
+All Luna API requests use `service_tier: "priority"` to request Fast mode.
 
 ## Pi setup
 
 ```bash
-git switch local-ui-rectangle-alignment
+git switch local-ui-rectangle-alignment-pi-ui
 git pull --ff-only
 python -m pip install -r backend/requirements.txt
 # Keep the camera settings in backend/.env and add:
@@ -15,7 +16,8 @@ python -m pip install -r backend/requirements.txt
 # RETURNSCAN_DECISION_ENGINE=luna
 # RETURNSCAN_OPENAI_MODEL=gpt-6-luna
 # RETURNSCAN_OPENAI_REASONING=none
-python -m uvicorn backend.main:app --env-file backend/.env --host 0.0.0.0 --port 8000 --workers 1
+RETURNSCAN_CAMERAS_ENABLED=1 RETURNSCAN_CAMERA_AUTO_SCAN=0 \
+python -m uvicorn backend.main:app --env-file backend/.env --host 127.0.0.1 --port 8000 --workers 1
 ```
 
 Pi inspection images use an adaptive crop around the central product by default.
@@ -60,21 +62,23 @@ the Pi's Vite process forwards API requests to `127.0.0.1:8000`.
 ## Request flow and response
 
 1. **Scan item** opens a modal. Enter **1** and submit with **Scan item** or Enter.
-2. Submission uses `GET /v1/orders/1` to load the black iPhone 15, its reference count and **171 g** expected weight.
+2. Submission uses `GET /v1/cameras/orders/1` to load the black iPhone 15, its reference count and **171 g** expected weight.
 3. A valid order immediately posts `{"order_number":"1"}` to `/v1/cameras/scan`; the Pi captures fresh frames. There is no separate lookup/confirmation step. An unknown order stays in the modal with an error and does not capture.
 4. The worker compares each view against `iphone-15` references and takes one simulated weight reading for the entire scan.
 5. The frontend polls `/v1/cameras/scans/{scan_id}` and renders the reference/boxed return image, weight difference and combined check result. The review screen retains the same reading.
 
 The backend automatically creates `orders.sqlite3` inside `RETURNSCAN_DATA_DIR`
-(default `backend/.runtime`) with demo order **1**. SQLite uses Python's standard
-library; no database server or additional package is needed. If `iphone-15` is
+(default `backend/.runtime`) with demo order **1**. The demo order store uses Python's SQLite library. If `iphone-15` is
 already enrolled, its reference photos are preserved. Otherwise a bundled demo
 reference is enrolled automatically; see [sample attribution](samples/README.md).
 Replace that photo with your own verified reference using the enrollment routes
 or `backend/enroll_iphone15.py`.
 
-The **demo** sensor samples uniformly within ±5% of 171 g: **162.45–179.55 g**.
-The weight tolerance is also ±5%, so this simulated reading passes by design.
+The **demo** sensor alternates between the expected weight ±5% on odd scans
+and half the expected weight ±5% on even scans. For 171 g, those ranges are
+**162.45–179.55 g** and approximately **81.22–89.78 g**, respectively.
+The scan counter stays in backend memory and resets on startup. The weight
+tolerance is ±5% of the expected weight, so even scans fail the weight check.
 It demonstrates the comparison UI; it is not a real scale measurement. Weight is
 sampled once per scan and stays fixed during polling. A visual mismatch or failed
 weight check makes the combined result suspicious; missing or inconclusive visual
@@ -108,6 +112,20 @@ replacement and batch routes remain available. Luna compares up to eight
 reference views and picks the closest one for localization. Without an explicit
 product, catalog identification uses one reference per product (maximum 20 products)
 in an additional API request.
+
+## Orders and return records
+
+Main's records API is available alongside live capture. The desktop
+(`?ui=desktop`) and browser touchscreen (`?ui=touch`) use `/v1/orders` and
+`/v1/returns` to work with order items and store evidence and decisions.
+The default records database is `returnscan.db` in the same data directory.
+Set `RETURNSCAN_DATABASE_URL` to configure a different records database, and
+run `python -m backend.seed --enroll` to add main's sample orders and products.
+
+The Pi station (`?ui=pi`, the default) uses its existing separate demo store.
+For compatibility, an older Pi client's `GET /v1/orders/{id}` can still return a
+camera order if that ID has no record in the main database. New Pi clients use
+`/v1/cameras/orders/{id}` directly.
 
 ## Legacy local CV
 

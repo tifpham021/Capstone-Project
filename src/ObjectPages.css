@@ -532,6 +532,24 @@
   .camcap-device select { max-width: none; width: 100%; }
 }
 
+/* 1024 x 600 Pi touchscreen: Compact.css locks the shell to one screen, so
+   these pages scroll inside it and use a shorter preview. */
+@media (max-height: 720px) and (min-width: 900px) {
+  .obj-page {
+    width: calc(100% - 48px);
+    overflow-y: auto;
+    padding: 12px 0 20px;
+  }
+
+  .obj-heading { margin-bottom: 10px; }
+  .obj-heading h1 { font-size: 22px; }
+  .obj-heading p { margin-top: 2px; font-size: 13px; }
+  .obj-card { gap: 10px; padding: 12px 14px; }
+  .camcap-view { aspect-ratio: auto; height: 300px; }
+  .obj-side { top: 0; }
+  .obj-compare img { height: 240px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .camcap-live-pill i,
   .obj-progress i { animation: none; }

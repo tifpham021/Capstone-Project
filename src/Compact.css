@@ -1,0 +1,393 @@
+/*
+ * Compact layout for short landscape screens, such as the 1024 x 600 Pi
+ * touchscreen. Every screen fits the viewport without page scrolling: the shell
+ * becomes a full-height column and each page flexes into the space between the
+ * top bar and its footer. Loaded after all other styles so these overrides win.
+ */
+@media (max-height: 720px) and (min-width: 900px) {
+  html {
+    scrollbar-gutter: auto;
+  }
+
+  /* Shell: top bar, page, footer stacked in exactly one screen height. */
+  .app-shell {
+    height: 100dvh;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .app-shell > main {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .topbar {
+    flex: 0 0 auto;
+    height: 56px;
+  }
+
+  .topbar-inner {
+    width: calc(100% - 48px);
+  }
+
+  .brand {
+    gap: 10px;
+    font-size: 20px;
+  }
+
+  .brand-icon {
+    transform: scale(.85);
+  }
+
+  /* Item inspection */
+  .desktop-inspection-page {
+    width: calc(100% - 48px);
+    height: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 0;
+  }
+
+  .desktop-inspection-heading {
+    height: auto;
+    align-items: center;
+  }
+
+  .desktop-inspection-heading h1 {
+    font-size: 22px;
+    letter-spacing: -.5px;
+  }
+
+  .desktop-inspection-heading p {
+    margin-top: 2px;
+    font-size: 12px;
+  }
+
+  .desktop-inspection-layout {
+    flex: 1 1 auto;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1.5fr) minmax(300px, .9fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+
+  .desktop-camera-card {
+    gap: 6px;
+    padding: 10px 12px;
+  }
+
+  .desktop-camera-card h2,
+  .desktop-scan-card h2,
+  .desktop-analysis-card h2 {
+    font-size: 16px;
+  }
+
+  .desktop-scan-card {
+    min-height: 0;
+    padding: 10px 12px;
+  }
+
+  .desktop-order-summary {
+    min-height: 0;
+    margin-top: 8px;
+    padding: 8px 10px;
+  }
+
+  .desktop-scan-button {
+    margin-top: 8px;
+  }
+
+  .desktop-scan-progress {
+    padding-top: 8px;
+  }
+
+  .desktop-analysis-card {
+    gap: 12px;
+    padding: 8px 12px;
+  }
+
+  .desktop-analysis-heading > strong {
+    margin-top: 4px;
+    font-size: 14px;
+  }
+
+  .desktop-analysis-checks > div {
+    min-height: 48px;
+    padding: 6px 10px;
+  }
+
+  .inspection-footer.desktop-inspection-footer,
+  .review-footer {
+    flex: 0 0 auto;
+    height: 64px;
+    padding: 0 24px;
+  }
+
+  .inspection-footer > div:first-child,
+  .review-confirmation {
+    gap: 3px;
+  }
+
+  .review-actions button {
+    height: 46px;
+  }
+
+  /* Review & decide: analysis and decision side by side. */
+  .review-page {
+    width: calc(100% - 48px);
+    height: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 0;
+  }
+
+  .review-intro {
+    height: auto;
+    gap: 20px;
+  }
+
+  .review-intro h1 {
+    margin-bottom: 2px;
+    font-size: 22px;
+    letter-spacing: -.5px;
+  }
+
+  .review-intro p {
+    font-size: 12px;
+  }
+
+  .review-case-summary {
+    min-width: 0;
+    min-height: 48px;
+    grid-template-columns: 120px minmax(180px, 1fr);
+    border-radius: 12px;
+  }
+
+  .review-case-summary > div {
+    gap: 2px;
+    padding: 0 14px;
+  }
+
+  .review-layout {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
+    grid-template-columns: minmax(0, 1.3fr) minmax(320px, .9fr);
+    gap: 10px;
+  }
+
+  .review-analysis-card,
+  .review-decision-card {
+    height: auto;
+    min-height: 0;
+    padding: 12px;
+  }
+
+  .review-analysis-card {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .review-section-heading {
+    min-height: 0;
+    margin-bottom: 8px;
+  }
+
+  .review-section-heading h2 {
+    font-size: 16px;
+  }
+
+  .review-section-heading p {
+    margin-top: 2px;
+  }
+
+  .review-analysis-grid {
+    flex: 1 1 auto;
+    height: auto;
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 1fr);
+    gap: 10px;
+  }
+
+  .review-camera-section {
+    grid-template-rows: 18px minmax(0, 1fr) 16px;
+  }
+
+  .review-camera-preview::after {
+    inset: 10px 14%;
+  }
+
+  .review-results-panel {
+    gap: 8px;
+    margin-top: 0;
+    padding: 10px;
+  }
+
+  .review-result-row {
+    min-height: 0;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .review-results-note {
+    min-height: 0;
+    padding: 8px 10px;
+  }
+
+  .review-decision-card fieldset {
+    gap: 6px;
+    margin-top: 0;
+  }
+
+  .decision-option {
+    min-height: 44px;
+    padding: 6px 10px;
+  }
+
+  .decision-option.selected {
+    padding: 5px 9px;
+  }
+
+  .decision-field select {
+    height: 40px;
+  }
+
+  /* Account dashboard */
+  .page-content.account-page {
+    width: calc(100% - 48px);
+    height: auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 12px 0;
+  }
+
+  .account-page .account-intro {
+    flex: 0 0 auto;
+    height: auto;
+    min-height: 0;
+    margin-bottom: 10px;
+  }
+
+  .account-intro h1 {
+    font-size: 24px;
+  }
+
+  .account-intro p {
+    margin-top: 2px;
+    font-size: 12px;
+  }
+
+  .account-stats {
+    flex: 0 0 auto;
+    height: 54px;
+    margin-bottom: 10px;
+  }
+
+  .account-grid {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
+    grid-template-columns: minmax(0, 1.4fr) minmax(310px, .85fr);
+    gap: 10px;
+  }
+
+  .account-activity-card {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .decision-history {
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .account-side-column {
+    min-height: 0;
+    grid-template-rows: auto auto;
+    gap: 10px;
+  }
+
+  /* Sign in */
+  .login-shell {
+    min-height: 100dvh;
+    padding: 12px 24px;
+  }
+
+  .login-layout {
+    width: min(960px, 100%);
+    border-radius: 20px;
+  }
+
+  .login-brand-panel {
+    gap: 20px;
+    padding: 28px 32px;
+  }
+
+  .login-brand-copy h2 {
+    margin-bottom: 8px;
+    font-size: 26px;
+  }
+
+  .login-brand-copy p {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .login-highlights {
+    gap: 12px;
+  }
+
+  .login-evidence {
+    padding: 14px;
+  }
+
+  .login-card {
+    gap: 12px;
+    padding: 22px 32px;
+  }
+
+  .login-card-header h1 {
+    margin-bottom: 2px;
+    font-size: 22px;
+  }
+
+  .login-card-header p {
+    font-size: 13px;
+  }
+
+  .provider-buttons {
+    gap: 8px;
+  }
+
+  .provider-button {
+    height: 42px;
+  }
+
+  .login-divider {
+    margin: 0;
+  }
+
+  .login-form {
+    gap: 10px;
+  }
+
+  .login-field {
+    gap: 5px;
+  }
+
+  .login-field input {
+    height: 42px;
+  }
+
+  .login-submit {
+    height: 44px;
+  }
+
+  .demo-credentials {
+    padding: 10px 14px;
+  }
+}

@@ -1,51 +1,207 @@
 # ReturnScan
 
-ReturnScan is a React application for processing product returns. It guides a reviewer through identifying a returned item, inspecting it, and reviewing a decision.
+ReturnScan helps a reviewer process product returns. The reviewer identifies
+the returned item, inspects it (weight and photos), and records a decision. A
+computer vision (CV) check compares the return photo with the original order's
+photos and suggests whether they match. The reviewer always makes the final call.
 
-## Requirements
+The project has three parts:
 
-- Node.js and npm
+| Part | Where | What it does |
+| --- | --- | --- |
+| **Frontend** | [`src/`](src/) | React + Vite app with a live Pi station UI, a browser-camera touchscreen UI, and a desktop workstation UI |
+| **Backend API** | [`backend/`](backend/README.md) | Python/FastAPI service. Serves Pi camera jobs, visual verification, and orders and returns |
+| **Database** | `backend/.runtime/returnscan.db` | SQLite: orders, original photos, expected weights, returns, weight checks, CV results, decisions |
 
-## Run locally
+```text
+ React UI (port 5173) ──Vite proxy──▶ FastAPI backend (port 8000)
+                                      ├─ /v1/cameras          → Pi capture and demo order DB
+                                      ├─ /v1/orders, /v1/returns → records DB and saved evidence
+                                      └─ /v1/products, /v1/verify → Luna or local CV
+```
 
-From the project directory, install the dependencies and start the development server:
+## Quick start
+
+You need **Node.js** and **Python 3.11–3.13**. Run the backend and the frontend
+in two terminals from the repository root.
+
+For live station scans, follow the [Pi setup](backend/README.md#pi-setup).
+The steps below run the desktop workflow with local CV.
+
+**1. Backend** (the first CV check downloads model weights):
+
+```bash
+python -m venv backend/.venv
+# macOS/Linux:
+source backend/.venv/bin/activate
+# Windows (Git Bash):  source backend/.venv/Scripts/activate
+# Windows (PowerShell): backend\.venv\Scripts\Activate.ps1
+python -m pip install -r backend/requirements-cv.txt
+RETURNSCAN_DECISION_ENGINE=cv python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --workers 1
+```
+
+**2. Demo data** (in another terminal with the venv active, once the API is up):
+
+```bash
+python -m backend.seed --enroll
+```
+
+This adds the demo orders `ORD-8921` (cordless drill), `ORD-9004` (headphones and
+cable), `ORD-1032` (Owala hot pink) and `ORD-1045` (Owala pink with a tan lid).
+It also enrolls the bottles in the verification catalog. Running it again is safe.
+
+**3. Frontend:**
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open the local URL printed in the terminal. Vite typically uses [http://localhost:5173](http://localhost:5173); if that port is already in use, Vite will select another available port.
+Open <http://localhost:5173/?ui=desktop> for the desktop UI. In that UI,
+choose **Use demo account** and sign in. If the backend is not running, the
+desktop UI still works with a built-in demo return, but nothing is saved (the
+screen says so).
 
-## Available scripts
+### Try the CV check
 
-- `npm run dev` starts the Vite development server with hot module replacement.
-- `npm run build` creates a production build in `dist/`.
-- `npm run preview` serves the production build locally after running `npm run build`.
-- `npm run lint` runs ESLint.
+Use the desktop UI (<http://localhost:5173/?ui=desktop>):
 
-## Functional camera inspection backend
+1. Look up `ORD-1032` and select **Begin inspection**. The original order photo
+   appears as the shipped reference.
+2. Enter the scale reading in kg (the order expects about 0.43 kg) and select
+   **Record weight**.
+3. Select **Add photo** and take or upload a photo of the returned bottle. The
+   photo is saved to the return and sent to the CV check. The first check after
+   the server starts takes up to a minute while models load.
+4. Continue to review. The evidence package shows the weight, the visual match
+   percentage and both photos. Choose a decision; it is saved with the return.
 
-This branch (`local-ui-rectangle-alignment`) contains the working **Scan item**
-screen and one/two-camera Raspberry Pi capture jobs. It now uses **GPT-6 Luna
-with reasoning off** for decisions. The order-number scan modal, polling and
-API proxy run with the Pi backend. Each camera result shows the actual reference beside
-the boxed return image, plus damage/product/parts/counterfeit/evidence flags,
-confidence and processing time.
+Results so far: the reference photo against itself scores 100%, and the drill
+photo scores 0% (`suspicious`). **The CV check does not compare colour yet.** A
+blue version of the bottle still scored 99% (see
+[Known limitations](#known-limitations)).
 
-See [backend setup](backend/README.md) for Pi configuration and the API key.
-Run the frontend on the Pi as well, in a second terminal:
+## UI modes
 
-```bash
-RETURNSCAN_API_PROXY_TARGET=http://127.0.0.1:8000 npm run dev -- --host 0.0.0.0 --port 5173 --strictPort
+| Mode | Browser URL | Workflow |
+| --- | --- | --- |
+| Pi station (default) | `?ui=pi` | 1024×600 layout, order keypad, direct Pi camera capture, visual findings and simulated weight |
+| Touchscreen | `?ui=touch` | Main's browser-camera and barcode flow with records lookup |
+| Desktop | `?ui=desktop` | Main's workstation flow with photo uploads, weight entry and saved decisions |
+
+The browser remembers the selection. Use `?ui=default` to clear it or set
+`VITE_UI_MODE` in `.env.local` and restart Vite to change the installation's default.
+All three use the same-origin Vite proxy by default.
+
+## Backend and database
+
+The live Pi flow uses demo order `1` in `orders.sqlite3`. The desktop and browser touchscreen flows use the records database below.
+
+**Records database.** It stores what the checks compare against:
+
+- **Orders:** order ID and customer.
+- **Order items:** product, SKU, serial number, barcode, price, **expected weight**
+  and weight tolerance, and the CV catalog `product_id`.
+- **Original order photos.**
+
+For each **return** it stores:
+
+- the status history
+- each scale reading compared with the order
+- station photos
+- CV results
+- the reviewer's decision
+
+By default this is a SQLite file. Set `RETURNSCAN_DATABASE_URL` to use PostgreSQL
+instead. Photos are saved as cleaned JPEG files next to the database.
+
+A weight passes when it is within the item's tolerance. Items without a tolerance
+pass within 2% of the expected weight or 5 g, whichever is larger. Barcodes are
+stored but barcode lookup is not built yet.
+
+The desktop UI uses the database for all four steps of a return:
+
+1. It looks up the order.
+2. It creates the return.
+3. It saves each weight and photo during inspection.
+4. It records the decision.
+
+**Verification API.** You enroll a product with 1–8 genuine reference photos
+(`POST /v1/products`). After that, `POST /v1/verify` compares a return photo with
+those references. With the CV engine selected, it returns:
+
+- a decision: `consistent`, `suspicious` or `inconclusive`
+- a visual-match confidence
+- the reasons for the decision
+- discrepancy and heatmap images
+
+Interactive docs for every route are at <http://127.0.0.1:8000/docs>. The
+[backend README](backend/README.md) has the full route list, curl/JavaScript
+examples, configuration (`RETURNSCAN_*` variables, API key, CORS) and tests.
+
+## How the CV check works
+
+1. **Remove the background.** The default local foreground model is U2Netp.
+2. **Find the product.** DINOv2 ViT-S/14 features find the closest enrolled
+   product and its most similar reference photo.
+3. **Line up the views.** By default, each cut-out's outline is fitted to a
+   rectangle and warped onto a common canvas. All four orientations are tried
+   and the best one is kept. ALIKED/LightGlue feature matching is an optional
+   alternative (`RETURNSCAN_ALIGNMENT_METHOD=features`).
+4. **Compare patches.** Nearby DINOv2 patches inside the product are compared,
+   PatchCore-style. Outline differences are tracked separately.
+5. **Score.** Product similarity (15%) and patch similarity (85%) are combined
+   into the confidence. If the views cannot be aligned, the result is
+   `inconclusive` and the UI hides the percentage.
+
+It runs on CPU, Apple Silicon (MPS) or CUDA.
+
+## Known limitations
+
+- **No colour check.** The CV check compares shape and texture, not colour, so
+  a different colourway of the same product passes. The backend README
+  describes a possible fix.
+- **Thresholds are not calibrated.** This is a proof of concept, not a validated
+  counterfeit detector. Treat the confidence as a signal for the reviewer.
+- **Demo values.** The `ORD-1032` weight (430 g) and price are estimates.
+  Weigh a real bottle and update [`backend/seed.py`](backend/seed.py).
+- **Not wired yet:**
+  - barcode lookup
+  - account history from the database (it is still kept in the browser)
+- **Sign-in is a frontend prototype.** The backend only supports an optional
+  shared API key (`RETURNSCAN_API_KEY`), not per-user accounts.
+
+## Project layout
+
+```text
+src/
+  App.jsx, uiMode.js            picks the UI mode
+  PiApp.jsx, PiItemInspection.jsx  live Pi inspection and camera jobs
+  DesktopApp.jsx                desktop workflow (identify → inspect → review)
+  ItemInspection.jsx            weight entry, photos, CV check
+  ReviewDecision.jsx            evidence package and decision
+  api.js, returnRecords.js      backend calls and data conversion
+  TouchApp.jsx, Touchscreen.jsx Raspberry Pi touchscreen UI
+backend/
+  main.py, cameras.py            FastAPI app and Pi camera jobs
+  records.py, database.py       orders/returns routes and tables
+  vision.py                      Luna engine
+  service.py, alignment.py, algorithms.py   CV engine
+  seed.py, samples/             demo orders and the Owala reference photo
+  tests/                        pytest suite
 ```
 
-Open `http://localhost:5173` on the Pi, or `http://100.70.178.175:5173` from
-another device that can reach it. The proxy uses localhost because both servers
-run on the Pi, regardless of which device opens the webpage.
+## Scripts and tests
 
-Keep the OpenAI key on the backend, not in browser configuration. The previous
-CV engine is optional; it is not used as a silent fallback on API failure.
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Start the frontend dev server |
+| `npm run build` | Production build in `dist/` |
+| `npm run preview` | Serve the production build |
+| `npm run lint` | ESLint |
+| `python -m pip install -r backend/requirements-dev.txt` | Install the backend test tools |
+| `python -m pytest backend` | Backend tests (no model downloads) |
+| `ruff check backend && ruff format --check backend` | Python lint and formatting |
 
 ## Signing in
 

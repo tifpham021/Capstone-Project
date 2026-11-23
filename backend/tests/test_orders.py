@@ -60,14 +60,21 @@ def test_weight_comparison_bounds(weight, matches):
     assert compare_weight(DEMO_ORDER, weight)["within_tolerance"] is matches
 
 
-def test_demo_sensor_only_returns_expected_plus_or_minus_five_percent():
+def test_demo_sensor_alternates_full_and_half_weight_plus_or_minus_five_percent():
     sensor = DemoWeightSensor()
-    for _ in range(200):
+    for scan_number in range(1, 201):
         result = sensor.check(DEMO_ORDER)
-        assert 162.45 <= result["measured_weight_g"] <= 179.55
-        assert result["within_tolerance"]
+        if scan_number % 2:
+            assert 162.45 <= result["measured_weight_g"] <= 179.55
+        else:
+            assert 81.22 <= result["measured_weight_g"] <= 89.78
+        assert result["within_tolerance"] is bool(scan_number % 2)
         assert result["sensor_mode"] == "demo"
         assert result["expected_weight_g"] == 171
+
+    # A fresh backend sensor starts with a correct reading again.
+    sensor.check(DEMO_ORDER)
+    assert DemoWeightSensor().check(DEMO_ORDER)["within_tolerance"]
 
 
 @pytest.mark.parametrize("weight", [float("nan"), float("inf"), -1, 0])
@@ -96,10 +103,15 @@ def test_order_lookup_and_scan_job_use_a_snapshot_not_station_default(tmp_path, 
     app = create_app(Settings(data_dir=tmp_path), service=verifier)
     app.state.camera_monitor = monitor
     with TestClient(app) as client:
-        order = client.get("/v1/orders/1").json()
+        order = client.get("/v1/cameras/orders/1").json()
+        assert client.get("/v1/orders/1").json() == order  # Legacy camera client
+        saved = client.post("/v1/orders", json={"id": "1", "items": [{"product_name": "Bottle"}]})
+        assert saved.status_code == 201
+        assert client.get("/v1/orders/1").json()["items"][0]["product_name"] == "Bottle"
+        assert client.get("/v1/cameras/orders/1").json() == order
         assert order["product_id"] == "iphone-15" and order["reference_count"] == 2
         assert order["expected_weight_g"] == 171
-        assert client.get("/v1/orders/2").status_code == 404
+        assert client.get("/v1/cameras/orders/2").status_code == 404
         assert client.post("/v1/cameras/scan", json={"order_number": "999"}).status_code == 404
         assert not monitor.scans
         assert client.post("/v1/cameras/scan", json={"order_number": ""}).status_code == 422

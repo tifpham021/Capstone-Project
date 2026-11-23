@@ -21,6 +21,8 @@ import ItemInspection from './ItemInspection.jsx'
 import ReviewDecision from './ReviewDecision.jsx'
 import BarcodeScanner from './BarcodeScanner.jsx'
 import LoginPage from './LoginPage.jsx'
+import EnrollObject from './EnrollObject.jsx'
+import ScanObject from './ScanObject.jsx'
 import AccountDashboard, { ProfileAvatar } from './AccountDashboard.jsx'
 import { loadSession, signOut } from './auth/authService.js'
 import {
@@ -111,6 +113,7 @@ function Workstation({ session, onSignOut }) {
   const [screen, setScreen] = useState('inspection')
   const [returnCase, setReturnCase] = useState(null)
   const [activeScan, setActiveScan] = useState(null)
+  const [scanObjectId, setScanObjectId] = useState(null)
   const updateScan = useCallback((scan) => {
     setActiveScan(scan)
     if (scan.order) {
@@ -292,11 +295,25 @@ function Workstation({ session, onSignOut }) {
 
           <nav className="primary-nav" aria-label="Primary navigation">
             <button
-              className={screen === 'account' ? 'nav-link' : 'nav-link active'}
+              className={['account', 'enroll', 'scan'].includes(screen) ? 'nav-link' : 'nav-link active'}
               type="button"
               onClick={startNewReturn}
             >
               New Return
+            </button>
+            <button
+              className={screen === 'enroll' ? 'nav-link active' : 'nav-link'}
+              type="button"
+              onClick={() => setScreen('enroll')}
+            >
+              Enroll Object
+            </button>
+            <button
+              className={screen === 'scan' ? 'nav-link active' : 'nav-link'}
+              type="button"
+              onClick={() => { setScanObjectId(null); setScreen('scan') }}
+            >
+              Scan Object
             </button>
             <button
               className={screen === 'account' ? 'nav-link active' : 'nav-link'}
@@ -314,7 +331,11 @@ function Workstation({ session, onSignOut }) {
         </div>
       </header>
 
-      {screen === 'account' ? (
+      {screen === 'enroll' ? (
+        <EnrollObject onScanObject={(id) => { setScanObjectId(id); setScreen('scan') }} />
+      ) : screen === 'scan' ? (
+        <ScanObject key={scanObjectId || 'auto'} initialProductId={scanObjectId} />
+      ) : screen === 'account' ? (
         <AccountDashboard
           session={session}
           activeReturn={returnCase}

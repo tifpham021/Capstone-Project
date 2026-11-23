@@ -6,12 +6,12 @@ export function artifactUrl(path) {
   return `${base}${path}`
 }
 
-export async function scanRequest(path, options = {}) {
+export async function scanRequest(path, { timeoutMs = 15000, ...options } = {}) {
   const controller = new AbortController()
   const abort = () => controller.abort()
   options.signal?.addEventListener('abort', abort, { once: true })
   if (options.signal?.aborted) controller.abort()
-  const timer = setTimeout(abort, 15000)
+  const timer = setTimeout(abort, timeoutMs)
   try {
     const response = await fetch(`${base}${path}`, { ...options, signal: controller.signal })
     const body = await response.json().catch(() => ({}))

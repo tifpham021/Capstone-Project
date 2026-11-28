@@ -76,6 +76,8 @@ class ProductSummary(BaseModel):
     sku: str
     barcode: str | None = None
     reference_count: int
+    expected_weight_g: float | None = None
+    weight_tolerance_percent: float | None = None
 
 
 class Candidate(BaseModel):

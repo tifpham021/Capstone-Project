@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { artifactUrl, scanRequest } from './scanApi.js'
+import useProducts from './useProducts.js'
 import './PiItemInspection.css'
 import './OrderScan.css'
 
@@ -49,13 +50,16 @@ function ScanProgress({ activeStage }) {
   )
 }
 
-export default function ItemInspection({ onBack, onContinue, scan, onScanChange }) {
+export default function ItemInspection({ onBack, onContinue, scan, onScanChange, initialProductId = null }) {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [orderNumber, setOrderNumber] = useState('')
   const [orderError, setOrderError] = useState('')
   const [lookingUp, setLookingUp] = useState(false)
+  const [identificationMode, setIdentificationMode] = useState(initialProductId ? 'product' : 'order')
+  const [selectedProductId, setSelectedProductId] = useState(initialProductId || '')
+  const { products, error: productsError } = useProducts()
   const dialogRef = useRef(null)
   const orderInputRef = useRef(null)
   const lookupRef = useRef(null)
@@ -77,21 +81,26 @@ export default function ItemInspection({ onBack, onContinue, scan, onScanChange 
   const referenceImage = artifactUrl(referenceImagePath)
   const visualDecision = verification?.decision
   const photoCount = scan?.results?.length || 0
+  const scanSource = scan?.order || scan?.product
+  const productOnly = Boolean(scan?.product)
+  const selectedProduct = products.find((product) => product.id === selectedProductId)
 
   useEffect(() => {
     const dialog = dialogRef.current
     if (dialogOpen) {
       dialog.showModal()
-      orderInputRef.current?.focus()
+      if (identificationMode === 'order') orderInputRef.current?.focus()
     }
     else dialog.close()
     return () => { if (dialog.open) dialog.close() }
-  }, [dialogOpen])
+  }, [dialogOpen, identificationMode])
 
   useEffect(() => () => lookupRef.current?.abort(), [])
 
   function openOrderDialog() {
     setOrderNumber(scan?.order?.order_number || '')
+    setSelectedProductId(scan?.product?.product_id || initialProductId || '')
+    setIdentificationMode(scan?.product || initialProductId ? 'product' : 'order')
     setOrderError('')
     setDialogOpen(true)
   }
@@ -108,6 +117,14 @@ export default function ItemInspection({ onBack, onContinue, scan, onScanChange 
     setLookingUp(false)
     setOrderError('')
     setOrderNumber(value)
+  }
+
+  function chooseIdentificationMode(mode) {
+    setIdentificationMode(mode)
+    setOrderError('')
+    window.requestAnimationFrame(() => {
+      if (mode === 'order') orderInputRef.current?.focus()
+    })
   }
 
   function enterKeypadDigit(digit) {
@@ -149,7 +166,7 @@ export default function ItemInspection({ onBack, onContinue, scan, onScanChange 
   async function startScan(event) {
     event.preventDefault()
     const number = orderNumber.trim()
-    if (!number || submitting) return
+    if (submitting || (identificationMode === 'order' ? !number : !selectedProductId)) return
     const controller = new AbortController()
     lookupRef.current = controller
     setSubmitting(true)
@@ -157,13 +174,21 @@ export default function ItemInspection({ onBack, onContinue, scan, onScanChange 
     setError('')
     setOrderError('')
     try {
-      const order = await scanRequest(`/v1/cameras/orders/${encodeURIComponent(number)}`, { signal: controller.signal })
-      if (controller.signal.aborted) return
-      if (!order.reference_count) throw new Error('No reference photos are enrolled for this item. Add references before scanning.')
+      let requestBody
+      if (identificationMode === 'order') {
+        const order = await scanRequest(`/v1/cameras/orders/${encodeURIComponent(number)}`, { signal: controller.signal })
+        if (controller.signal.aborted) return
+        if (!order.reference_count) throw new Error('No reference photos are enrolled for this item. Add references before scanning.')
+        requestBody = { order_number: order.order_number }
+      } else {
+        if (!selectedProduct) throw new Error('Choose an enrolled product before starting the scan.')
+        if (!selectedProduct.reference_count) throw new Error('This product does not have any reference photos.')
+        requestBody = { product_id: selectedProduct.id }
+      }
       setLookingUp(false)
       const next = await scanRequest('/v1/cameras/scan', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order_number: order.order_number }),
+        body: JSON.stringify(requestBody),
       })
       onScanChange(next)
       setDialogOpen(false)
@@ -179,7 +204,7 @@ export default function ItemInspection({ onBack, onContinue, scan, onScanChange 
     <>
       <main id="main" className="inspection-page desktop-inspection-page">
         <section className="desktop-inspection-heading">
-          <div><h1>Identify &amp; inspect item</h1><p>Place the item in view, then enter the order number to begin.</p></div>
+          <div><h1>Identify &amp; inspect item</h1><p>Place the item in view, then use an order number or enrolled product to begin.</p></div>
           {onBack ? <button type="button" className="desktop-back-button" onClick={onBack} disabled={busy}>‹ Back</button> : null}
         </section>
 
@@ -219,22 +244,22 @@ export default function ItemInspection({ onBack, onContinue, scan, onScanChange 
             <header>
               <span>Inspection</span>
               <h2>{complete ? 'Inspection complete' : busy ? 'Analyzing item' : 'Ready to scan'}</h2>
-              <p>{complete ? 'Review the results, then continue to the final decision.' : busy ? 'The capture is being compared with the product reference.' : 'Start with the order number so the correct reference is loaded.'}</p>
+              <p>{complete ? 'Review the results, then continue to the final decision.' : busy ? 'The capture is being compared with the product reference.' : 'Use an order number or choose an enrolled product to load the correct reference.'}</p>
             </header>
 
-            <section className={`desktop-order-summary${scan?.order ? ' loaded' : ''}`} aria-label="Order summary">
-              <div className="desktop-order-heading"><span>Order details</span>{scan?.order && <strong>Loaded</strong>}</div>
-              {scan?.order ? (
+            <section className={`desktop-order-summary${scanSource ? ' loaded' : ''}`} aria-label={productOnly ? 'Product summary' : 'Order summary'}>
+              <div className="desktop-order-heading"><span>{productOnly ? 'Product details' : 'Order details'}</span>{scanSource && <strong>Loaded</strong>}</div>
+              {scanSource ? (
                 <>
-                  <h3>{scan.order.product_name}</h3>
+                  <h3>{scanSource.product_name}</h3>
                   <dl>
-                    <div><dt>Order</dt><dd>{scan.order.order_number}</dd></div>
-                    <div><dt>SKU</dt><dd>{scan.order.sku || '—'}</dd></div>
-                    <div><dt>Expected</dt><dd>{formatWeight(scan.weight?.expected_weight_g ?? scan.order.expected_weight_g)}</dd></div>
+                    <div><dt>{productOnly ? 'Product' : 'Order'}</dt><dd>{productOnly ? scanSource.product_id : scanSource.order_number}</dd></div>
+                    <div><dt>SKU</dt><dd>{scanSource.sku || '—'}</dd></div>
+                    <div><dt>Expected</dt><dd>{formatWeight(scan.weight?.expected_weight_g ?? scanSource.expected_weight_g)}</dd></div>
                   </dl>
                 </>
               ) : (
-                <div className="desktop-order-empty"><span aria-hidden="true">#</span><p>No order selected yet.</p></div>
+                <div className="desktop-order-empty"><span aria-hidden="true">#</span><p>No order or product selected yet.</p></div>
               )}
             </section>
 
@@ -242,7 +267,7 @@ export default function ItemInspection({ onBack, onContinue, scan, onScanChange 
               <span aria-hidden="true">{complete ? '↻' : '⌁'}</span>
               {busy ? 'Scanning item…' : complete ? 'Scan again' : 'Scan item'}
             </button>
-            <small>You’ll enter the order number before the scan begins.</small>
+            <small>Choose how the expected product should be identified.</small>
             <ScanProgress activeStage={stage} />
           </aside>
 
@@ -279,24 +304,50 @@ export default function ItemInspection({ onBack, onContinue, scan, onScanChange 
       </footer>
       <dialog className="scan-order-dialog" ref={dialogRef} aria-labelledby="scan-order-title" onCancel={(event) => { event.preventDefault(); closeOrderDialog() }}>
         <div className="scan-order-heading">
-          <div><span>Start inspection</span><h2 id="scan-order-title">Enter order number</h2><p>The scan starts automatically after the order is confirmed.</p></div>
+          <div><span>Start inspection</span><h2 id="scan-order-title">Identify expected product</h2><p>Use the customer’s order or select a product already saved in the catalog.</p></div>
           <button type="button" className="scan-order-close" aria-label="Close order entry" disabled={submitting} onClick={closeOrderDialog}>×</button>
         </div>
+        <div className="scan-source-switch" role="tablist" aria-label="Inspection lookup method">
+          <button type="button" role="tab" aria-selected={identificationMode === 'order'} className={identificationMode === 'order' ? 'active' : ''} onClick={() => chooseIdentificationMode('order')} disabled={submitting}>Order number</button>
+          <button type="button" role="tab" aria-selected={identificationMode === 'product'} className={identificationMode === 'product' ? 'active' : ''} onClick={() => chooseIdentificationMode('product')} disabled={submitting}>Enrolled product</button>
+        </div>
         <form onSubmit={startScan} className="scan-order-lookup">
-          <label htmlFor="scan-order-number">Order number</label>
-          <div className="scan-order-input-row">
-            <input ref={orderInputRef} id="scan-order-number" name="order_number" value={orderNumber} onChange={(event) => changeOrderNumber(event.target.value)} placeholder="Enter order number" maxLength={64} disabled={submitting} required />
-            <button type="submit" className="scan-order-submit" disabled={submitting || !orderNumber.trim()}>{lookingUp ? 'Loading order…' : submitting ? 'Starting scan…' : 'Start scan'}</button>
-          </div>
-          <div className="scan-order-keypad" role="group" aria-label="Order number keypad">
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
-              <button type="button" key={digit} disabled={submitting} onClick={() => enterKeypadDigit(digit)}>{digit}</button>
-            ))}
-            <button type="button" className="keypad-action" disabled={submitting || !orderNumber} onClick={() => changeOrderNumber('')}>Clear</button>
-            <button type="button" disabled={submitting} onClick={() => enterKeypadDigit(0)}>0</button>
-            <button type="button" className="keypad-action keypad-delete" aria-label="Delete last digit" disabled={submitting || !orderNumber} onClick={removeKeypadDigit}>⌫</button>
-          </div>
-          <p className="scan-order-help">Use an order with a product reference enrolled in the station database.</p>
+          {identificationMode === 'order' ? (
+            <>
+              <label htmlFor="scan-order-number">Order number</label>
+              <div className="scan-order-input-row">
+                <input ref={orderInputRef} id="scan-order-number" name="order_number" value={orderNumber} onChange={(event) => changeOrderNumber(event.target.value)} placeholder="Enter order number" maxLength={64} disabled={submitting} required />
+                <button type="submit" className="scan-order-submit" disabled={submitting || !orderNumber.trim()}>{lookingUp ? 'Loading order…' : submitting ? 'Starting scan…' : 'Start scan'}</button>
+              </div>
+              <div className="scan-order-keypad" role="group" aria-label="Order number keypad">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
+                  <button type="button" key={digit} disabled={submitting} onClick={() => enterKeypadDigit(digit)}>{digit}</button>
+                ))}
+                <button type="button" className="keypad-action" disabled={submitting || !orderNumber} onClick={() => changeOrderNumber('')}>Clear</button>
+                <button type="button" disabled={submitting} onClick={() => enterKeypadDigit(0)}>0</button>
+                <button type="button" className="keypad-action keypad-delete" aria-label="Delete last digit" disabled={submitting || !orderNumber} onClick={removeKeypadDigit}>⌫</button>
+              </div>
+              <p className="scan-order-help">Use an order already connected to an enrolled product.</p>
+            </>
+          ) : (
+            <>
+              <label htmlFor="scan-product-id">Enrolled product</label>
+              <select id="scan-product-id" className="scan-product-select" value={selectedProductId} onChange={(event) => { setSelectedProductId(event.target.value); setOrderError('') }} disabled={submitting} required>
+                <option value="">Choose a product</option>
+                {products.map((product) => <option key={product.id} value={product.id}>{product.name}{product.sku ? ` · ${product.sku}` : ''}</option>)}
+              </select>
+              {selectedProduct ? (
+                <div className="scan-product-summary">
+                  <div><span>Reference photos</span><strong>{selectedProduct.reference_count}</strong></div>
+                  <div><span>Expected weight</span><strong>{formatWeight(selectedProduct.expected_weight_g)}</strong></div>
+                  <div><span>Tolerance</span><strong>{Number.isFinite(selectedProduct.weight_tolerance_percent) ? `${selectedProduct.weight_tolerance_percent}%` : 'Not available'}</strong></div>
+                </div>
+              ) : <p className="scan-order-help">Products enrolled in Product Catalog appear here.</p>}
+              <button type="submit" className="scan-order-submit scan-product-submit" disabled={submitting || !selectedProductId}>{submitting ? 'Starting scan…' : 'Start product scan'}</button>
+              {productsError ? <p className="scan-error" role="alert">{productsError}</p> : null}
+              <p className="scan-product-disclaimer">This inspection compares the item with a saved product, but it is not connected to a customer order or refund.</p>
+            </>
+          )}
         </form>
         {orderError && <p className="scan-error" role="alert">{orderError}</p>}
       </dialog>

@@ -121,7 +121,7 @@ class DemoWeightSensor:
 
 
 def combined_decision(results, weight):
-    if not weight["within_tolerance"]:
+    if weight is not None and not weight["within_tolerance"]:
         return "suspicious"
     decisions = [view.get("result", {}).get("decision") for view in results]
     if "suspicious" in decisions:

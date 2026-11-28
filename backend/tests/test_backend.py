@@ -136,6 +136,25 @@ def test_catalog_persists_across_restart(configured):
     assert restarted.products()[0]["id"] == "orange-product"
 
 
+def test_enrollment_persists_expected_weight_metadata(configured):
+    settings, _, client = configured
+    response = client.post(
+        "/v1/products",
+        data={
+            "product_id": "weighted-product",
+            "name": "Weighted product",
+            "expected_weight_g": "85",
+            "weight_tolerance_percent": "4.5",
+        },
+        files={"references": ("ref.png", png(), "image/png")},
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["expected_weight_g"] == 85
+    assert response.json()["weight_tolerance_percent"] == 4.5
+    restarted = VerificationService(settings, models=FakeModels(), segmenter=FakeSegmenter())
+    assert restarted.products()[0]["expected_weight_g"] == 85
+
+
 def test_barcode_and_claim_mismatch(configured):
     _, _, client = configured
     enroll(client)

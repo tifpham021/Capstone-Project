@@ -152,3 +152,34 @@ def test_reference_seed_supplies_the_demo_iphone15_when_missing():
             assert images[0].startswith(b"\xff\xd8")
 
     ensure_demo_reference(EmptyCatalog())
+
+
+def test_product_only_scan_uses_enrolled_product_metadata(tmp_path):
+    class ProductVerifier(Verifier):
+        def products(self):
+            return [{
+                "id": "mouse",
+                "name": "Wireless mouse",
+                "sku": "MOUSE-1",
+                "barcode": None,
+                "reference_count": 3,
+                "expected_weight_g": 85.0,
+                "weight_tolerance_percent": 5.0,
+            }]
+
+    verifier = ProductVerifier()
+    sensor = FixedSensor(86)
+    monitor = CameraMonitor(verifier, weight_sensor=sensor)
+    monitor._set(status="watching")
+    app = create_app(Settings(data_dir=tmp_path), service=verifier)
+    app.state.camera_monitor = monitor
+    with TestClient(app) as client:
+        accepted = client.post("/v1/cameras/scan", json={"product_id": "mouse"})
+        assert accepted.status_code == 202, accepted.text
+        job = accepted.json()
+        assert "order" not in job
+        assert job["product"]["product_id"] == "mouse"
+        completed = monitor._verify([b"view"], 123, job["product"])
+        assert completed["product"]["product_name"] == "Wireless mouse"
+        assert completed["weight"]["expected_weight_g"] == 85
+        assert completed["decision"] == "consistent"

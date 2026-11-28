@@ -21,8 +21,7 @@ import ItemInspection from './PiItemInspection.jsx'
 import ReviewDecision from './PiReviewDecision.jsx'
 import BarcodeScanner from './DesktopBarcodeScanner.jsx'
 import LoginPage from './PiLoginPage.jsx'
-import EnrollObject from './EnrollObject.jsx'
-import ScanObject from './ScanObject.jsx'
+import ObjectWorkflow from './ObjectWorkflow.jsx'
 import AccountDashboard, { ProfileAvatar } from './PiAccountDashboard.jsx'
 import { loadSession, signOut } from './auth/authService.js'
 import {
@@ -114,20 +113,28 @@ function Workstation({ session, onSignOut }) {
   const [screen, setScreen] = useState('inspection')
   const [returnCase, setReturnCase] = useState(null)
   const [activeScan, setActiveScan] = useState(null)
-  const [scanObjectId, setScanObjectId] = useState(null)
+  const [inspectionProductId, setInspectionProductId] = useState(null)
   const updateScan = useCallback((scan) => {
     setActiveScan(scan)
-    if (scan.order) {
-      const order = scan.order
+    const source = scan.order || scan.product
+    if (source) {
+      const productOnly = Boolean(scan.product)
       setReturnCase((current) => {
-        let next = current || createIdentifiedReturn(order.order_number)
+        let next = current || createIdentifiedReturn(source.order_number || source.product_id)
         if (next.status === RETURN_STATUS.IDENTIFIED) {
           next = transitionReturn(next, RETURN_STATUS.INSPECTION_IN_PROGRESS)
         }
         return {
-          ...next, orderNumber: order.order_number, lookupIdentifier: order.order_number,
-          productName: order.product_name, productModel: order.sku, sku: order.sku,
-          serialNumber: 'Not recorded', customerName: 'Demo order', refundAmount: null,
+          ...next,
+          inspectionMode: productOnly ? 'product' : 'order',
+          orderNumber: source.order_number || '',
+          lookupIdentifier: source.order_number || source.product_id,
+          productName: source.product_name,
+          productModel: source.sku,
+          sku: source.sku,
+          serialNumber: 'Not recorded',
+          customerName: productOnly ? '' : 'Demo order',
+          refundAmount: null,
         }
       })
     }
@@ -261,9 +268,17 @@ function Workstation({ session, onSignOut }) {
   const startNewReturn = () => {
     setReturnCase(null)
     setActiveScan(null)
+    setInspectionProductId(null)
     setLookup('')
     setStatus('')
     setMode(preferences.defaultLookupMode)
+    setScreen('inspection')
+  }
+
+  const inspectProduct = (productId) => {
+    setReturnCase(null)
+    setActiveScan(null)
+    setInspectionProductId(productId)
     setScreen('inspection')
   }
 
@@ -296,25 +311,18 @@ function Workstation({ session, onSignOut }) {
 
           <nav className="primary-nav" aria-label="Primary navigation">
             <button
-              className={['account', 'enroll', 'scan'].includes(screen) ? 'nav-link' : 'nav-link active'}
+              className={['account', 'objects'].includes(screen) ? 'nav-link' : 'nav-link active'}
               type="button"
               onClick={startNewReturn}
             >
-              New Return
+              Inspect Return
             </button>
             <button
-              className={screen === 'enroll' ? 'nav-link active' : 'nav-link'}
+              className={screen === 'objects' ? 'nav-link active' : 'nav-link'}
               type="button"
-              onClick={() => setScreen('enroll')}
+              onClick={() => setScreen('objects')}
             >
-              Enroll Object
-            </button>
-            <button
-              className={screen === 'scan' ? 'nav-link active' : 'nav-link'}
-              type="button"
-              onClick={() => { setScanObjectId(null); setScreen('scan') }}
-            >
-              Scan Object
+              Product Catalog
             </button>
             <button
               className={screen === 'account' ? 'nav-link active' : 'nav-link'}
@@ -332,10 +340,8 @@ function Workstation({ session, onSignOut }) {
         </div>
       </header>
 
-      {screen === 'enroll' ? (
-        <EnrollObject onScanObject={(id) => { setScanObjectId(id); setScreen('scan') }} />
-      ) : screen === 'scan' ? (
-        <ScanObject key={scanObjectId || 'auto'} initialProductId={scanObjectId} />
+      {screen === 'objects' ? (
+        <ObjectWorkflow onInspectProduct={inspectProduct} />
       ) : screen === 'account' ? (
         <AccountDashboard
           session={session}
@@ -534,6 +540,7 @@ function Workstation({ session, onSignOut }) {
           scan={activeScan}
           onScanChange={updateScan}
           onContinue={continueToReview}
+          initialProductId={inspectionProductId}
         />
       ) : (
         <ReviewDecision

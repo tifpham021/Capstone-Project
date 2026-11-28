@@ -1,4 +1,4 @@
-/* Enroll Object and Scan Object pages (browser camera). */
+/* Enroll and compare workflow (browser camera). */
 
 .obj-page {
   width: min(1632px, calc(100% - 64px));
@@ -28,6 +28,65 @@
   color: #687386;
   font-size: 15px;
 }
+
+.obj-workflow-page {
+  box-sizing: border-box;
+  width: min(1600px, calc(100% - 128px));
+  height: 620px;
+  padding: 24px 0;
+}
+
+.obj-workflow-heading {
+  height: 112px;
+  margin: 0;
+}
+
+.obj-workflow-heading h1 { font-size: 36px; }
+
+.obj-workflow-stage {
+  height: 460px;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.obj-workflow-stage .obj-layout {
+  min-height: 100%;
+  grid-template-columns: minmax(0, 1.56fr) minmax(390px, .84fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.obj-workflow-stage .obj-layout > .obj-card:not(.obj-result) {
+  height: 440px;
+  min-height: 0;
+  align-content: start;
+  overflow-y: auto;
+  gap: 10px;
+  padding: 14px 16px;
+}
+
+.obj-workflow-stage .obj-side { position: static; }
+
+.obj-workflow-stage .obj-layout > .obj-card:first-child {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.obj-workflow-stage .camcap {
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.obj-workflow-stage .camcap-view {
+  height: 100%;
+  min-height: 0;
+  aspect-ratio: auto;
+}
+
+.obj-workflow-stage .obj-form { gap: 8px; }
+.obj-workflow-switch { flex: 0 0 auto; }
+.obj-continue { margin-top: 4px; }
 
 .obj-eyebrow,
 .obj-card-header span,
@@ -75,6 +134,19 @@
   box-shadow: 0 4px 16px rgb(15 23 42 / 4%);
 }
 
+.obj-camera-card { position: relative; }
+
+.obj-camera-card.keyboard-open::after {
+  content: '';
+  position: absolute;
+  z-index: 70;
+  inset: 0;
+  border-radius: inherit;
+  background: rgb(15 23 42 / 30%);
+  backdrop-filter: blur(1.5px);
+  pointer-events: none;
+}
+
 .obj-card-header {
   display: flex;
   align-items: flex-start;
@@ -118,7 +190,16 @@
   overflow: hidden;
   border: 1px solid #dbe3ee;
   border-radius: 11px;
-  background: linear-gradient(180deg, #f8fafc, #eef2f7);
+  background: #f1f5f9;
+}
+
+.camcap-view:not(.live)::before {
+  content: '';
+  position: absolute;
+  inset: 12% 18%;
+  border: 2px dashed rgb(65 105 225 / 24%);
+  border-radius: 14px;
+  pointer-events: none;
 }
 
 .camcap-view.live { background: #0b1220; }
@@ -173,6 +254,7 @@
 
 .camcap-empty {
   position: absolute;
+  z-index: 1;
   inset: 0;
   display: grid;
   place-content: center;
@@ -190,7 +272,7 @@
   width: 52px;
   height: 40px;
   margin-bottom: 6px;
-  border: 3px solid #94a3b8;
+  border: 3px solid #4169e1;
   border-radius: 10px;
 }
 
@@ -201,7 +283,7 @@
   left: 50%;
   width: 14px;
   height: 14px;
-  border: 3px solid #94a3b8;
+  border: 3px solid #4169e1;
   border-radius: 50%;
   transform: translate(-50%, -50%);
 }
@@ -228,6 +310,24 @@
   font-size: 14px;
 }
 
+.obj-field input,
+.obj-field select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.obj-field select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 42px;
+  background-color: #fff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5 6 6.5l5-5' stroke='%23475569' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+  background-size: 12px 8px;
+}
+
 .camcap-device select { max-width: 240px; }
 
 /* Buttons */
@@ -252,12 +352,12 @@
 .obj-btn:hover:not(:disabled) { background: #f8fafc; }
 
 .obj-btn.primary {
-  border-color: #2563eb;
+  border-color: #4169e1;
   color: #fff;
-  background: #2563eb;
+  background: #4169e1;
 }
 
-.obj-btn.primary:hover:not(:disabled) { background: #1d4ed8; }
+.obj-btn.primary:hover:not(:disabled) { background: #3158c4; }
 .obj-btn:disabled { cursor: not-allowed; opacity: .5; }
 .obj-btn.wide { width: 100%; }
 
@@ -348,9 +448,113 @@
 .obj-field small { color: #7b8495; font-size: 12px; }
 .obj-field small.bad { color: #b42318; }
 
+.obj-touch-stepper {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  gap: 6px;
+}
+
+.obj-touch-stepper button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  color: #3158c4;
+  background: #eef3ff;
+  font: inherit;
+  font-size: 24px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.obj-touch-stepper button:hover:not(:disabled) { border-color: #9eb2ee; background: #e1e9ff; }
+.obj-touch-stepper button:disabled { color: #94a3b8; cursor: not-allowed; opacity: .55; }
+.obj-touch-stepper input { min-width: 0; padding: 0 4px; text-align: center; }
+
+/* Contextual Pi keyboard. It overlays the camera preview without adding to
+   the page height, so no scrolling is needed while entering details. */
+.obj-onscreen-keyboard {
+  position: absolute;
+  z-index: 80;
+  top: 62px;
+  right: 16px;
+  left: 16px;
+  box-sizing: border-box;
+  width: auto;
+  padding: 12px;
+  border: 1px solid #cbd7ed;
+  border-radius: 14px;
+  background: rgb(255 255 255 / 98%);
+  box-shadow: 0 22px 58px rgb(15 23 42 / 34%), 0 0 0 1px rgb(255 255 255 / 75%);
+  backdrop-filter: blur(8px);
+}
+
+.obj-keyboard-header,
+.obj-keyboard-actions,
+.obj-keyboard-row {
+  display: flex;
+  align-items: center;
+}
+
+.obj-keyboard-header { justify-content: space-between; margin-bottom: 8px; }
+.obj-keyboard-header > div { display: flex; align-items: baseline; gap: 7px; }
+.obj-keyboard-header span { color: #7b8495; font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.obj-keyboard-header strong { color: #27324a; font-size: 14px; }
+
+.obj-keyboard-header button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #d3dceb;
+  border-radius: 8px;
+  color: #475569;
+  background: #fff;
+  font-size: 21px;
+}
+
+.obj-keyboard-rows { display: grid; gap: 5px; }
+.obj-keyboard-row { justify-content: center; gap: 5px; }
+
+.obj-keyboard-row button,
+.obj-keyboard-actions button {
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid #d3dceb;
+  border-radius: 7px;
+  color: #27324a;
+  background: #f8fafc;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.obj-keyboard-row button { flex: 1 1 0; max-width: 64px; }
+.obj-keyboard-row button:hover,
+.obj-keyboard-actions button:hover { border-color: #9eb2ee; background: #eef3ff; }
+.obj-keyboard-row .keyboard-action { color: #3158c4; font-size: 18px; }
+
+.obj-keyboard-actions { justify-content: center; gap: 6px; margin-top: 7px; }
+.obj-keyboard-actions button { min-width: 74px; }
+.obj-keyboard-actions button.active { border-color: #4169e1; color: #3158c4; background: #eef3ff; }
+.obj-keyboard-actions .space { flex: 1 1 auto; max-width: 280px; }
+.obj-keyboard-actions .done { border-color: #4169e1; color: #fff; background: #4169e1; }
+.obj-keyboard-actions .done:hover { background: #3158c4; }
+
+.obj-onscreen-keyboard.numeric {
+  top: 50%;
+  right: max(16px, 12%);
+  left: max(16px, 12%);
+  transform: translateY(-50%);
+}
+.obj-onscreen-keyboard.numeric .obj-keyboard-row button { max-width: none; }
+
 .obj-field-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  align-items: start;
   gap: 12px;
 }
 
@@ -520,6 +724,67 @@
   .obj-side { position: static; }
 }
 
+/* Keep the two-panel composition on tablets and the Pi, while allowing both
+   columns to shrink with the available width. */
+@media (min-width: 900px) and (max-width: 1180px) {
+  .obj-workflow-page { width: calc(100% - 48px); }
+
+  .obj-workflow-stage .obj-layout {
+    grid-template-columns: minmax(0, 1.45fr) minmax(300px, .85fr);
+    gap: 12px;
+  }
+}
+
+/* On smaller screens the page scrolls naturally and the two cards stack.
+   Their heights follow their contents instead of retaining the Pi dimensions. */
+@media (max-width: 899px) {
+  .obj-workflow-page {
+    width: calc(100% - 40px);
+    height: auto;
+    min-height: 0;
+    padding: 22px 0 36px;
+    overflow: visible;
+  }
+
+  .obj-workflow-heading {
+    height: auto;
+    align-items: flex-start;
+    margin-bottom: 18px;
+  }
+
+  .obj-workflow-heading h1 { font-size: clamp(28px, 5vw, 34px); }
+
+  .obj-workflow-stage {
+    height: auto;
+    overflow: visible;
+  }
+
+  .obj-workflow-stage .obj-layout {
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .obj-workflow-stage .obj-layout > .obj-card:not(.obj-result) {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .obj-workflow-stage .obj-layout > .obj-card:first-child {
+    grid-template-rows: auto auto auto;
+  }
+
+  .obj-workflow-stage .camcap { height: auto; }
+
+  .obj-workflow-stage .camcap-view {
+    height: auto;
+    min-height: clamp(240px, 54vw, 390px);
+    aspect-ratio: 16 / 10;
+  }
+
+}
+
 @media (max-width: 620px) {
   .obj-page { width: calc(100% - 32px); padding-top: 20px; }
   .obj-heading { flex-direction: column; }
@@ -530,10 +795,36 @@
   .obj-discrepancies li { grid-template-columns: 1fr; gap: 4px; }
   .camcap-device { margin-left: 0; width: 100%; }
   .camcap-device select { max-width: none; width: 100%; }
+
+  .obj-workflow-page {
+    width: calc(100% - 32px);
+    padding: 18px 0 28px;
+  }
+
+  .obj-workflow-heading {
+    width: 100%;
+    gap: 14px;
+  }
+
+  .obj-workflow-heading p { font-size: 14px; }
+  .obj-workflow-switch { width: 100%; }
+
+  .obj-workflow-stage .obj-layout > .obj-card:not(.obj-result) {
+    padding: 14px;
+  }
+
+  .obj-workflow-stage .camcap-view {
+    min-height: 220px;
+    aspect-ratio: 4 / 3;
+  }
+
+  .camcap-view:not(.live)::before { inset: 12% 10%; }
+  .camcap-empty { padding: 18px; }
+  .camcap-controls > .obj-btn { flex: 1 1 140px; }
 }
 
-/* 1024 x 600 Pi touchscreen: Compact.css locks the shell to one screen, so
-   these pages scroll inside it and use a shorter preview. */
+/* 1024 x 600 Pi touchscreen: Compact.css locks the full app shell to the
+   viewport. Keep this workflow inside the remaining space below the top bar. */
 @media (max-height: 720px) and (min-width: 900px) {
   .obj-page {
     width: calc(100% - 48px);
@@ -545,9 +836,55 @@
   .obj-heading h1 { font-size: 22px; }
   .obj-heading p { margin-top: 2px; font-size: 13px; }
   .obj-card { gap: 10px; padding: 12px 14px; }
-  .camcap-view { aspect-ratio: auto; height: 300px; }
+  .camcap-view { aspect-ratio: auto; height: 230px; }
   .obj-side { top: 0; }
   .obj-compare img { height: 240px; }
+
+  .obj-workflow-page {
+    height: auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 10px 0;
+  }
+
+  .obj-workflow-heading {
+    flex: 0 0 auto;
+    height: auto;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .obj-workflow-heading p { max-width: 600px; }
+  .obj-workflow-switch { min-height: 38px; padding: 0 14px; }
+
+  .obj-workflow-stage {
+    height: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .obj-workflow-stage .obj-layout {
+    height: 100%;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1.5fr) minmax(300px, .9fr);
+    gap: 10px;
+    align-items: stretch;
+  }
+
+  .obj-workflow-stage .obj-card {
+    height: 100%;
+    min-height: 0;
+    align-content: start;
+    overflow-y: auto;
+    padding: 10px 12px;
+  }
+
+  .obj-workflow-stage .obj-layout > .obj-card:not(.obj-result) { height: 440px; }
+
+  .obj-workflow-stage .obj-form { gap: 6px; }
+  .obj-workflow-stage .obj-side { max-height: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -3,7 +3,7 @@ import { artifactUrl } from './scanApi.js'
 import { RETURN_STATUS } from './returnLifecycle.js'
 import './PiReviewDecision.css'
 
-const decisions = [
+const returnDecisions = [
   {
     id: 'approve',
     title: 'Approve return',
@@ -24,6 +24,27 @@ const decisions = [
   },
 ]
 
+const productDecisions = [
+  {
+    id: 'approve',
+    title: 'Product matches',
+    description: 'Record the item as matching the enrolled reference.',
+    badge: 'Match',
+  },
+  {
+    id: 'secondary',
+    title: 'Request review',
+    description: 'Route unresolved evidence to another reviewer.',
+    badge: 'Selected',
+  },
+  {
+    id: 'fraud',
+    title: 'Differences detected',
+    description: 'Record that the item does not match the enrolled reference.',
+    badge: 'Review',
+  },
+]
+
 function formatKilograms(grams) {
   if (!Number.isFinite(grams)) return 'Not available'
   return `${(grams / 1000).toFixed(3)} kg`
@@ -41,8 +62,10 @@ function evidenceTone(ready, needsReview = false) {
 }
 
 function ReviewDecision({ scan, returnCase, onBack, onSubmitDecision, reviewerName }) {
+  const productOnly = returnCase.inspectionMode === 'product'
+  const decisions = productOnly ? productDecisions : returnDecisions
   const [decision, setDecision] = useState(returnCase.decision?.type || 'secondary')
-  const [reason, setReason] = useState(returnCase.decision?.reason || 'Missing serial / identity evidence')
+  const [reason, setReason] = useState(returnCase.decision?.reason || (productOnly ? 'Visual evidence is inconclusive' : 'Missing serial / identity evidence'))
   const [feedback, setFeedback] = useState('')
   const isComplete = returnCase.status === RETURN_STATUS.COMPLETED
 
@@ -79,9 +102,9 @@ function ReviewDecision({ scan, returnCase, onBack, onSubmitDecision, reviewerNa
             <h1 id="review-title">Review &amp; decide</h1>
             <p>Review the scan results, then record the final outcome.</p>
           </div>
-          <div className="review-case-summary" aria-label="Return case summary">
+          <div className="review-case-summary" aria-label={productOnly ? 'Product inspection summary' : 'Return case summary'}>
             <div>
-              <span>Return case</span>
+              <span>{productOnly ? 'Product inspection' : 'Return case'}</span>
               <strong>{returnCase.id}</strong>
             </div>
             <div>
@@ -118,7 +141,7 @@ function ReviewDecision({ scan, returnCase, onBack, onSubmitDecision, reviewerNa
                   )}
                   <span className="review-camera-count">{scan?.results?.length || 0} camera capture</span>
                 </figure>
-                <p className="review-camera-caption">Captured automatically after order confirmation</p>
+                <p className="review-camera-caption">Captured automatically after {productOnly ? 'product selection' : 'order confirmation'}</p>
               </div>
 
               <div className="review-results-panel">
@@ -194,7 +217,7 @@ function ReviewDecision({ scan, returnCase, onBack, onSubmitDecision, reviewerNa
 
             <div className="review-advisory-note">
               <span>i</span>
-              <p>AI recommendation is advisory. Your decision is recorded.</p>
+              <p>{productOnly ? 'This comparison is not connected to a customer order or refund.' : 'The visual recommendation is advisory. Your decision is recorded.'}</p>
             </div>
             <span className="audit-note">Reviewer: {reviewerName}</span>
           </form>
@@ -209,7 +232,7 @@ function ReviewDecision({ scan, returnCase, onBack, onSubmitDecision, reviewerNa
         <div className="review-actions">
           <button type="button" className="back-button" onClick={onBack}>← Back to scan</button>
           <button type="submit" form="review-decision-form" className="submit-review-button" disabled={isComplete}>
-            {isComplete ? 'Decision recorded' : decision === 'approve' ? 'Approve return' : decision === 'fraud' ? 'Flag return' : 'Send for review'} <span aria-hidden="true">→</span>
+            {isComplete ? 'Decision recorded' : decision === 'approve' ? (productOnly ? 'Record match' : 'Approve return') : decision === 'fraud' ? (productOnly ? 'Record differences' : 'Flag return') : 'Send for review'} <span aria-hidden="true">→</span>
           </button>
         </div>
       </footer>

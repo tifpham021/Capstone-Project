@@ -78,7 +78,7 @@ class CameraMonitor:
         }
         self.thread = threading.Thread(target=self._run, name="camera-monitor", daemon=True)
 
-    def request_scan(self, order=None):
+    def request_scan(self, order=None, product=None):
         from backend.common import ServiceError
 
         with self.lock:
@@ -91,6 +91,8 @@ class CameraMonitor:
             self.scans[scan_id] = {"scan_id": scan_id, "status": "queued"}
             if order is not None:
                 self.scans[scan_id]["order"] = copy.deepcopy(order)
+            elif product is not None:
+                self.scans[scan_id]["product"] = copy.deepcopy(product)
             while len(self.scans) > 16:
                 del self.scans[next(iter(self.scans))]
             return copy.deepcopy(self.scans[scan_id])
@@ -126,11 +128,13 @@ class CameraMonitor:
         # Never close a camera concurrently with its capture thread.
         self.thread.join(timeout=10)
 
-    def _verify(self, images, captured_at, order=None):
+    def _verify(self, images, captured_at, context=None):
         from backend.orders import combined_decision
 
-        weight = self.weight_sensor.check(order) if order is not None else None
-        expected = order["product_id"] if order is not None else self.expected
+        product_only = context is not None and context.get("inspection_mode") == "product"
+        has_weight = context is not None and context.get("expected_weight_g") is not None
+        weight = self.weight_sensor.check(context) if has_weight else None
+        expected = context["product_id"] if context is not None else self.expected
         results = []
         for camera_id, image in zip(self.ids, images):
             if self.stop_event.is_set():
@@ -150,10 +154,9 @@ class CameraMonitor:
             "results": results,
             "aggregation": "independent_images",
         }
-        if order is not None:
-            completed.update(
-                order=order, weight=weight, decision=combined_decision(results, weight)
-            )
+        if context is not None:
+            completed.update(weight=weight, decision=combined_decision(results, weight))
+            completed["product" if product_only else "order"] = context
         return completed
 
     def _run(self):
@@ -161,7 +164,7 @@ class CameraMonitor:
         executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="camera-cv")
         future = None
         active_scan = None
-        active_order = None
+        active_context = None
         try:
             import cv2
             from picamera2 import Picamera2
@@ -211,7 +214,7 @@ class CameraMonitor:
                         if active_scan:
                             self.scans[active_scan].update(status="complete", **completed)
                     active_scan = None
-                    active_order = None
+                    active_context = None
                     future = None
                     # Discard the old motion history after inference; require fresh settling.
                     gate.quiet_since = None
@@ -222,7 +225,10 @@ class CameraMonitor:
                         self.pending_scan = None
                         self.busy = True
                         active_scan = requested
-                        active_order = copy.deepcopy(self.scans[requested].get("order"))
+                        active_context = copy.deepcopy(
+                            self.scans[requested].get("order")
+                            or self.scans[requested].get("product")
+                        )
                         self.scans[requested]["status"] = "processing"
                 # Acquire fresh frames after accepting the button request.
                 frames = [camera.capture_array("main") for camera in cameras]
@@ -278,7 +284,7 @@ class CameraMonitor:
                                 raise RuntimeError("Camera JPEG encoding failed")
                             images.append(encoded.tobytes())
                         self._set(status="processing")
-                        future = executor.submit(self._verify, images, time.time(), active_order)
+                        future = executor.submit(self._verify, images, time.time(), active_context)
                 self.stop_event.wait(self.interval)
         except Exception as exc:
             LOG.exception("Camera monitor stopped")

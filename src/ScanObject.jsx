@@ -24,7 +24,7 @@ function percent(value) {
   return Number.isFinite(value) ? `${Math.round(value * 100)}%` : '—'
 }
 
-export default function ScanObject({ initialProductId }) {
+export default function ScanObject({ initialProductId, embedded = false }) {
   const [productId, setProductId] = useState(initialProductId || AUTO)
   const [photo, setPhoto] = useState(null) // { file, url }
   const [busy, setBusy] = useState(false)
@@ -63,15 +63,15 @@ export default function ScanObject({ initialProductId }) {
   const captured = artifactUrl(result?.annotated_image_url || result?.original_image_url)
   const stage = busy ? 'scanning' : result ? 'complete' : 'ready'
 
-  return (
-    <main id="main" className="obj-page">
-      <header className="obj-heading">
+  const content = (
+    <>
+      {!embedded ? <header className="obj-heading">
         <div>
           <span className="obj-eyebrow">Verification</span>
           <h1>Scan object</h1>
           <p>Capture the object with this device’s camera and compare it with its enrolled reference photos.</p>
         </div>
-      </header>
+      </header> : null}
 
       <div className="obj-layout">
         <section className="obj-card" aria-labelledby="scan-camera-title">
@@ -101,7 +101,7 @@ export default function ScanObject({ initialProductId }) {
             </select>
             <small>Choosing the expected object is faster and more accurate than auto-identify.</small>
           </label>
-          {noProducts ? <p className="obj-note">No objects are enrolled yet. Use <strong>Enroll Object</strong> first.</p> : null}
+          {noProducts ? <p className="obj-note">No products are enrolled yet. Add one in <strong>Product Catalog</strong> first.</p> : null}
           {loadError ? <p className="obj-error" role="alert">{loadError}</p> : null}
 
           {photo ? (
@@ -182,6 +182,10 @@ export default function ScanObject({ initialProductId }) {
           </section>
         ) : null}
       </div>
-    </main>
+    </>
   )
+
+  return embedded
+    ? <section className="obj-workflow-stage" aria-label="Scan comparison item">{content}</section>
+    : <main id="main" className="obj-page">{content}</main>
 }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import threading
 import uuid
@@ -67,6 +68,8 @@ class CatalogStore:
             sku=product["sku"],
             barcode=product.get("barcode"),
             reference_count=len(product["references"]),
+            expected_weight_g=product.get("expected_weight_g"),
+            weight_tolerance_percent=product.get("weight_tolerance_percent"),
         ).model_dump()
 
     def products(self):
@@ -74,12 +77,30 @@ class CatalogStore:
             return [self.summary(item) for item in self._catalog()["products"]]
 
     def register(
-        self, product_id: str, name: str, sku: str, barcode: str | None, images: list[bytes]
+        self,
+        product_id: str,
+        name: str,
+        sku: str,
+        barcode: str | None,
+        images: list[bytes],
+        expected_weight_g: float | None = None,
+        weight_tolerance_percent: float | None = None,
     ):
         if not PRODUCT_ID.fullmatch(product_id):
             raise ServiceError("product_id must be 1-64 letters, digits, underscores or hyphens")
         if not 1 <= len(images) <= self.settings.max_references:
             raise ServiceError(f"Supply 1-{self.settings.max_references} genuine reference images")
+        if expected_weight_g is not None and (
+            not math.isfinite(expected_weight_g) or expected_weight_g <= 0
+        ):
+            raise ServiceError("Expected weight must be a finite positive number")
+        if weight_tolerance_percent is not None and (
+            not math.isfinite(weight_tolerance_percent)
+            or not 0 <= weight_tolerance_percent <= 100
+        ):
+            raise ServiceError("Weight tolerance must be between 0 and 100 percent")
+        if expected_weight_g is None and weight_tolerance_percent is not None:
+            raise ServiceError("Expected weight is required when a weight tolerance is supplied")
         decoded = [decode_image(data, self.settings) for data in images]
         with self._lock:
             catalog = self._catalog()
@@ -101,14 +122,36 @@ class CatalogStore:
                 "barcode": barcode,
                 "references": references,
                 "thresholds": Thresholds().model_dump(),
+                "expected_weight_g": expected_weight_g,
+                "weight_tolerance_percent": (
+                    weight_tolerance_percent
+                    if expected_weight_g is not None and weight_tolerance_percent is not None
+                    else 5.0 if expected_weight_g is not None else None
+                ),
             }
             catalog["products"].append(product)
             write_json(self.catalog_path, catalog)
             return self.summary(product)
 
-    def replace_references(self, product_id, images, name=None):
+    def replace_references(
+        self,
+        product_id,
+        images,
+        name=None,
+        expected_weight_g=None,
+        weight_tolerance_percent=None,
+    ):
         if not 1 <= len(images) <= self.settings.max_references:
             raise ServiceError(f"Supply 1-{self.settings.max_references} genuine references")
+        if expected_weight_g is not None and (
+            not math.isfinite(expected_weight_g) or expected_weight_g <= 0
+        ):
+            raise ServiceError("Expected weight must be a finite positive number")
+        if weight_tolerance_percent is not None and (
+            not math.isfinite(weight_tolerance_percent)
+            or not 0 <= weight_tolerance_percent <= 100
+        ):
+            raise ServiceError("Weight tolerance must be between 0 and 100 percent")
         decoded = [decode_image(data, self.settings) for data in images]
         with self._lock:
             catalog = self._catalog()
@@ -125,6 +168,13 @@ class CatalogStore:
             product["references"] = references
             if name:
                 product["name"] = name
+            if expected_weight_g is not None:
+                product["expected_weight_g"] = expected_weight_g
+                product["weight_tolerance_percent"] = (
+                    weight_tolerance_percent
+                    if weight_tolerance_percent is not None
+                    else product.get("weight_tolerance_percent") or 5.0
+                )
             write_json(self.catalog_path, catalog)
             getattr(self, "_index", {}).pop(product_id, None)
             return self.summary(product)

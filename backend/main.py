@@ -8,7 +8,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import APIKeyHeader
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from starlette.exceptions import HTTPException
 
 from backend.catalog import IMAGE_ARTIFACTS
@@ -22,8 +22,15 @@ from backend.schemas import BatchResponse, ProductSummary, VerificationResponse
 LocalBackend = Literal["auto", "aliked", "sift"]
 
 
-class ScanOrderRequest(BaseModel):
-    order_number: str = Field(min_length=1, max_length=64)
+class ScanRequest(BaseModel):
+    order_number: str | None = Field(default=None, min_length=1, max_length=64)
+    product_id: str | None = Field(default=None, min_length=1, max_length=64)
+
+    @model_validator(mode="after")
+    def exactly_one_identifier(self):
+        if (self.order_number is None) == (self.product_id is None):
+            raise ValueError("Supply exactly one order_number or product_id")
+        return self
 
 
 class BodyLimitMiddleware:
@@ -155,12 +162,33 @@ def create_app(settings: Settings | None = None, service=None, session_factory=N
         return CameraOrder(**order, reference_count=product["reference_count"] if product else 0)
 
     @app.post("/v1/cameras/scan", status_code=202, dependencies=protected)
-    def scan_cameras(body: Annotated[ScanOrderRequest | None, Body()] = None):
-        order = orders.get(body.order_number) if body is not None else None
+    def scan_cameras(body: Annotated[ScanRequest | None, Body()] = None):
         monitor = getattr(app.state, "camera_monitor", None)
         if monitor is None:
             raise ServiceError("Camera mode is disabled. Enable RETURNSCAN_CAMERAS_ENABLED.", 503)
-        return monitor.request_scan(order=order)
+        if body is None:
+            return monitor.request_scan()
+        if body.order_number is not None:
+            return monitor.request_scan(order=orders.get(body.order_number))
+        product = next(
+            (item for item in app.state.verifier.products() if item["id"] == body.product_id),
+            None,
+        )
+        if product is None:
+            raise ServiceError("Product not found", 404)
+        if not product["reference_count"]:
+            raise ServiceError("No reference photos are enrolled for this product", 409)
+        return monitor.request_scan(
+            product={
+                "inspection_mode": "product",
+                "product_id": product["id"],
+                "product_name": product["name"],
+                "sku": product["sku"],
+                "expected_weight_g": product.get("expected_weight_g"),
+                "weight_tolerance_percent": product.get("weight_tolerance_percent"),
+                "reference_count": product["reference_count"],
+            }
+        )
 
     @app.get("/v1/cameras/scans/{scan_id}", dependencies=protected)
     def camera_scan_result(scan_id: str):
@@ -185,6 +213,8 @@ def create_app(settings: Settings | None = None, service=None, session_factory=N
         references: Annotated[list[UploadFile], File(description="1-8 genuine reference images")],
         sku: Annotated[str, Form(max_length=100)] = "",
         barcode: Annotated[str | None, Form(min_length=1, max_length=128)] = None,
+        expected_weight_g: Annotated[float | None, Form(gt=0)] = None,
+        weight_tolerance_percent: Annotated[float | None, Form(ge=0, le=100)] = None,
     ):
         try:
             if not 1 <= len(references) <= settings.max_references:
@@ -199,6 +229,8 @@ def create_app(settings: Settings | None = None, service=None, session_factory=N
                 sku or product_id,
                 barcode,
                 images,
+                expected_weight_g,
+                weight_tolerance_percent,
             )
         finally:
             for file in references:
@@ -215,6 +247,8 @@ def create_app(settings: Settings | None = None, service=None, session_factory=N
             list[UploadFile], File(description="1-8 replacement reference photos")
         ],
         name: Annotated[str | None, Form(max_length=200)] = None,
+        expected_weight_g: Annotated[float | None, Form(gt=0)] = None,
+        weight_tolerance_percent: Annotated[float | None, Form(ge=0, le=100)] = None,
     ):
         try:
             if not 1 <= len(references) <= settings.max_references:
@@ -227,6 +261,8 @@ def create_app(settings: Settings | None = None, service=None, session_factory=N
                 product_id,
                 images,
                 name.strip() if name is not None else None,
+                expected_weight_g,
+                weight_tolerance_percent,
             )
         finally:
             for file in references:
